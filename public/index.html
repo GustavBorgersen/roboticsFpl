@@ -8,41 +8,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; }
-    
-    /* Custom mobile-first table styling */
-    @media (max-width: 767px) {
-      .responsive-table thead {
-        display: none; /* Hide the table headers on small screens */
-      }
-
-      .responsive-table tbody tr {
-        display: block; /* Make rows a block element to stack them */
-        margin-bottom: 1rem;
-        border-radius: 0.5rem;
-        overflow: hidden;
-      }
-
-      .responsive-table td {
-        display: block; /* Make table cells a block element */
-        text-align: right;
-        font-size: 1rem;
-        padding-top: 0.5rem;
-        padding-bottom: 0.5rem;
-        position: relative;
-        padding-left: 50%; /* Add space for the pseudo-element label */
-      }
-      
-      .responsive-table td::before {
-        content: attr(data-label); /* Use data-label for the pseudo-element */
-        position: absolute;
-        left: 0;
-        width: 50%;
-        padding-left: 1rem;
-        text-align: left;
-        font-weight: bold;
-        color: #9CA3AF; /* gray-400 */
-      }
-    }
   </style>
 </head>
 <body class="bg-gray-900 text-gray-200">
@@ -54,13 +19,13 @@
       <div id="statusMessage" class="text-center text-sm text-gray-400 mb-4"></div>
 
       <div id="resultsContainer" class="hidden">
-        <h2 id="gameweekTitle" class="text-2xl font-semibold mb-4 text-center"></h2>
-        <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden responsive-table">
+        <h3 id="gameweekTitle" class="text-2xl font-semibold mb-4 text-center"></h3>
+        <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden">
           <thead>
             <tr class="bg-gray-600 text-left">
-              <th class="px-4 py-3 text-lg font-medium">Rank</th>
-              <th class="px-4 py-3 text-lg font-medium">Manager</th>
-              <th class="px-4 py-3 text-lg font-medium text-right">Total smuts</th>
+				<th class="px-2 py-2 text-base font-medium">Rank</th>
+				<th class="px-2 py-2 text-base font-medium">Manager</th>
+				<th class="px-2 py-2 text-base font-medium">Total smuts</th>
             </tr>
           </thead>
           <tbody id="resultsTableBody">
@@ -78,7 +43,7 @@
       const resultsTableBody = document.getElementById('resultsTableBody');
       const gameweekTitle = document.getElementById('gameweekTitle');
 
-      statusMessage.textContent = 'Fetching data....';
+      statusMessage.textContent = 'Fetching data... This may take a moment as it loops through all gameweeks.';
       resultsContainer.classList.add('hidden');
       resultsTableBody.innerHTML = '';
 
@@ -97,9 +62,9 @@
               const row = document.createElement('tr');
               row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
               row.innerHTML = `
-                <td class="px-4 py-3 font-semibold" data-label="Rank">${index + 1}</td>
-                <td class="px-4 py-3">${result.teamName} (${result.managerName})</td>
-                <td class="px-4 py-3 text-right font-bold text-green-400" data-label="Total Points">${result.totalAutoSubPoints}</td>
+                <td class="px-2 py-2 font-semibold">${index + 1}</td>
+                <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
+                <td class="px-2 py-2 text-right font-bold text-green-400">${result.totalAutoSubPoints}</td>
               `;
               resultsTableBody.appendChild(row);
             });
