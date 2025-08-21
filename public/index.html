@@ -15,7 +15,6 @@
   <div class="flex items-center justify-center min-h-screen p-4">
     <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl">
       <h1 class="text-3xl font-bold text-center mb-6 text-green-400">The Robotics Premiership</h1>
-	  <h2 class="text-2xl font-semibold mb-4 text-center">Den smutsiga sanningen...</h2>
       
       <div id="statusMessage" class="text-center text-sm text-gray-400 mb-4"></div>
 
@@ -54,7 +53,7 @@
 
         if (response.ok) {
           statusMessage.textContent = '';
-          gameweekTitle.textContent = `Season Total Auto-Sub Points (through Gameweek ${data.gameweek})`;
+          gameweekTitle.textContent = `Den smutsiga sanningen... (till och med gameweek ${data.gameweek})`;
           
           if (data.results.length === 0) {
             resultsTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No auto-sub points found for this league.</td></tr>';
