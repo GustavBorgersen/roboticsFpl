@@ -2,36 +2,38 @@
 const LEAGUE_API_URL = 'https://fantasy.premierleague.com/api/leagues-classic/';
 const TEAM_API_URL = 'https://fantasy.premierleague.com/api/entry/';
 const BOOTSTRAP_URL = 'https://fantasy.premierleague.com/api/bootstrap-static/';
+const PLAYER_API_URL = 'https://fantasy.premierleague.com/api/element-summary/';
 
 // Vercel serverless function entry point
 module.exports = async (req, res) => {
-  // Use a try-catch block to handle any errors gracefully
+  console.log('--- FPL Auto-Sub Points Request ---');
   try {
-    // Extract the leagueId from the query parameters, defaulting to a specific ID for testing
-    const leagueId = req.query.leagueId; 
+    const leagueId = req.query.leagueId;
+    console.log(`Received request for League ID: ${leagueId}`);
 
     if (!leagueId) {
+      console.error('Error: leagueId parameter is missing.');
       return res.status(400).json({ error: 'Please provide a leagueId parameter.' });
     }
 
     // Step 1: Get general data to find out the current gameweek
+    console.log('Step 1: Fetching current gameweek...');
     const bootstrapResponse = await fetch(BOOTSTRAP_URL);
     const bootstrapData = await bootstrapResponse.json();
     const currentGameweek = bootstrapData.events.find(event => event.is_current).id;
+    console.log(`Current Gameweek is: ${currentGameweek}`);
 
     // Step 2: Fetch the league standings to get a list of all managers
+    console.log(`Step 2: Fetching league standings for league ID: ${leagueId}`);
     const leagueResponse = await fetch(`${LEAGUE_API_URL}${leagueId}/standings/`);
     const leagueData = await leagueResponse.json();
 
-    // Check if the league exists
     if (leagueData.detail === 'Not found.') {
+      console.error('Error: League not found.');
       return res.status(404).json({ error: 'League not found. Please check the League ID.' });
     }
 
-    // Use a Map to store and accumulate each manager's total auto-sub points for the season
     const managerTotals = new Map();
-
-    // Initialize the Map with manager names and zero points
     for (const manager of leagueData.standings.results) {
       managerTotals.set(manager.entry, {
         managerName: manager.player_name,
@@ -40,51 +42,56 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Step 3: Loop through each gameweek from the beginning of the season to the current one
-    for (let gw = 1; gw <= currentGameweek; gw++) {
-      // Step 4: Loop through each manager in the league
-      for (const manager of leagueData.standings.results) {
-        const managerId = manager.entry;
-        
-        // Fetch the team's picks for the specific gameweek
+    // Step 3: Loop through each gameweek and each manager to find auto-subs
+    console.log('Step 3: Looping through managers and gameweeks to calculate points...');
+    for (const manager of leagueData.standings.results) {
+      const managerId = manager.entry;
+      console.log(`Processing manager: ${manager.player_name} (ID: ${managerId})`);
+
+      for (let gw = 1; gw <= currentGameweek; gw++) {
         const picksResponse = await fetch(`${TEAM_API_URL}${managerId}/event/${gw}/picks/`);
         const picksData = await picksResponse.json();
 
-        // Check if there are substitutions for this gameweek
         if (picksData.automatic_subs && picksData.automatic_subs.length > 0) {
-          // Identify the players who were auto-substituted in
+          console.log(`  Found ${picksData.automatic_subs.length} auto-subs for GW${gw}`);
           for (const sub of picksData.automatic_subs) {
             const playerInId = sub.element_in;
-            
-            // Find the substituted-in player's score from the main picks list
-            const substitutedPlayer = picksData.picks.find(p => p.element === playerInId);
-            if (substitutedPlayer) {
-              // Get the manager's current total from the map
+            console.log(`  Auto-subbed player in: ${playerInId}`);
+
+            // NEW: Fetch the specific player's data to get their points for this gameweek
+            const playerResponse = await fetch(`${PLAYER_API_URL}${playerInId}/`);
+            const playerData = await playerResponse.json();
+
+            const gameweekHistory = playerData.history.find(event => event.round === gw);
+
+            if (gameweekHistory) {
+              const autoSubPoints = gameweekHistory.total_points;
+              console.log(`  Player earned ${autoSubPoints} points for GW${gw}`);
+
               const currentData = managerTotals.get(managerId);
-              // Add the new points and update the map
-              currentData.totalAutoSubPoints += substitutedPlayer.points;
+              currentData.totalAutoSubPoints += autoSubPoints;
               managerTotals.set(managerId, currentData);
+            } else {
+              console.warn(`  Warning: Could not find gameweek history for player ${playerInId} in GW${gw}. Points will be skipped.`);
             }
           }
         }
       }
     }
 
-    // Step 5: Convert the Map values to an array for final sorting and display
+    // Step 4: Convert the Map to an array, sort, and send the response
+    console.log('Step 4: Sorting and preparing final response...');
     const results = Array.from(managerTotals.values());
-
-    // Step 6: Sort the results by total auto-sub points in descending order
     results.sort((a, b) => b.totalAutoSubPoints - a.totalAutoSubPoints);
 
-    // Send the final JSON response
+    console.log('--- Request Complete ---');
     res.status(200).json({
       gameweek: currentGameweek,
       results
     });
 
   } catch (error) {
-    // Log the error for debugging purposes on the Vercel dashboard
-    console.error('Error fetching FPL data:', error);
+    console.error('An unhandled error occurred:', error);
     res.status(500).json({ error: 'Internal server error. Please try again later.' });
   }
 };
