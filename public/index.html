@@ -12,20 +12,20 @@
 </head>
 <body class="bg-gray-900 text-gray-200">
 
-  <div class="flex items-center justify-center min-h-screen p-4">
+  <div class="flex flex-col items-center justify-center min-h-screen p-4 space-y-8">
+    <h1 class="text-3xl font-bold text-center mb-6 text-green-400">The Robotics Premiership</h1>
     <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl">
-      <h1 class="text-3xl font-bold text-center mb-6 text-green-400">The Robotics Premiership</h1>
       
       <div id="statusMessage" class="text-center text-sm text-gray-400 mb-4"></div>
-
+      
       <div id="resultsContainer" class="hidden">
         <h3 id="gameweekTitle" class="text-2xl font-semibold mb-4 text-center"></h3>
         <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden">
           <thead>
             <tr class="bg-gray-600 text-left">
-				<th class="px-2 py-2 text-base font-medium">Rank</th>
-				<th class="px-2 py-2 text-base font-medium">Manager</th>
-				<th class="px-2 py-2 text-base font-medium">Total smuts</th>
+                <th class="px-2 py-2 text-base font-medium">Rank</th>
+                <th class="px-2 py-2 text-base font-medium">Manager</th>
+                <th class="px-2 py-2 text-base font-medium">Total smuts</th>
             </tr>
           </thead>
           <tbody id="resultsTableBody">
@@ -33,20 +33,50 @@
         </table>
       </div>
     </div>
+    
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl">
+        <div id="transferCostStatus" class="text-center text-sm text-gray-400 mb-4"></div>
+        <div id="transferCostContainer" class="hidden">
+            <h3 id="transferCostGameweekTitle" class="text-2xl font-semibold mb-4 text-center"></h3>
+            <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden">
+                <thead>
+                    <tr class="bg-gray-600 text-left">
+                        <th class="px-2 py-2 text-base font-medium">Rank</th>
+                        <th class="px-2 py-2 text-base font-medium">Manager</th>
+                        <th class="px-2 py-2 text-base font-medium">Total points lost</th>
+                    </tr>
+                </thead>
+                <tbody id="transferCostTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
   </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const leagueId = '870661';
+
+      // Elements for the first table (Auto-Subs)
       const statusMessage = document.getElementById('statusMessage');
       const resultsContainer = document.getElementById('resultsContainer');
       const resultsTableBody = document.getElementById('resultsTableBody');
       const gameweekTitle = document.getElementById('gameweekTitle');
 
-      statusMessage.textContent = 'Fetching data... This may take a moment as it loops through all gameweeks.';
-      resultsContainer.classList.add('hidden');
-      resultsTableBody.innerHTML = '';
+      // Elements for the second table (Transfer Costs)
+      const transferCostStatus = document.getElementById('transferCostStatus');
+      const transferCostContainer = document.getElementById('transferCostContainer');
+      const transferCostTableBody = document.getElementById('transferCostTableBody');
+      const transferCostGameweekTitle = document.getElementById('transferCostGameweekTitle');
 
+      // Initialize status messages
+      statusMessage.textContent = 'Fetching auto-sub data...';
+      transferCostStatus.textContent = 'Fetching transfer cost data...';
+      resultsContainer.classList.add('hidden');
+      transferCostContainer.classList.add('hidden');
+
+      // Fetch and populate Auto-Sub data
       try {
         const response = await fetch(`/api/get-auto-subs?leagueId=${leagueId}`);
         const data = await response.json();
@@ -72,12 +102,45 @@
           resultsContainer.classList.remove('hidden');
 
         } else {
-          statusMessage.textContent = data.error || 'Failed to fetch data. Please try again later.';
+          statusMessage.textContent = data.error || 'Failed to fetch auto-sub data.';
         }
 
       } catch (error) {
-        console.error('Fetch error:', error);
+        console.error('Fetch auto-sub error:', error);
         statusMessage.textContent = 'An unexpected error occurred. Please check your network connection.';
+      }
+
+      // Fetch and populate Transfer Cost data
+      try {
+        const response = await fetch(`/api/get-transfer-cost?leagueId=${leagueId}`);
+        const data = await response.json();
+
+        if (response.ok) {
+          transferCostStatus.textContent = '';
+          transferCostGameweekTitle.textContent = `Håkan WCs. Till och med gameweek ${data.gameweek}`;
+          
+          if (data.results.length === 0) {
+            transferCostTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No transfer cost points found for this league.</td></tr>';
+          } else {
+            data.results.forEach((result, index) => {
+              const row = document.createElement('tr');
+              row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
+              row.innerHTML = `
+                <td class="px-2 py-2 font-semibold">${index + 1}</td>
+                <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
+                <td class="px-2 py-2 text-right font-bold text-red-400">${result.totalTransferCost}</td>
+              `;
+              transferCostTableBody.appendChild(row);
+            });
+          }
+          transferCostContainer.classList.remove('hidden');
+
+        } else {
+          transferCostStatus.textContent = data.error || 'Failed to fetch transfer cost data.';
+        }
+      } catch (error) {
+        console.error('Fetch transfer cost error:', error);
+        transferCostStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
       }
     });
   </script>
