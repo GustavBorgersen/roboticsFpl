@@ -117,7 +117,7 @@
 
         if (response.ok) {
           transferCostStatus.textContent = '';
-          transferCostGameweekTitle.textContent = `Håkan WCs. Till och med gameweek ${data.gameweek}`;
+          transferCostGameweekTitle.textContent = `Håkan WCs (Till och med gameweek ${data.gameweek})`;
           
           if (data.results.length === 0) {
             transferCostTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No transfer cost points found for this league.</td></tr>';
