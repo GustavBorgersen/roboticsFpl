@@ -14,6 +14,41 @@
 
   <div class="flex flex-col items-center justify-center min-h-screen p-4 space-y-8">
     <h1 class="text-3xl font-bold text-center mb-6 text-green-400">The Robotics Premiership</h1>
+
+    <!-- Live League Table -->
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-4xl">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-semibold text-center text-blue-400">Live League Standings</h2>
+        <button id="refreshButton" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors">
+          Refresh
+        </button>
+      </div>
+
+      <div id="liveStandingsStatus" class="text-center text-sm text-gray-400 mb-4"></div>
+
+      <div id="liveStandingsContainer" class="hidden">
+        <h3 id="liveGameweekTitle" class="text-xl font-semibold mb-4 text-center"></h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden">
+            <thead>
+              <tr class="bg-gray-600 text-left">
+                <th class="px-3 py-2 text-base font-medium">Pos</th>
+                <th class="px-3 py-2 text-base font-medium">Manager</th>
+                <th class="px-3 py-2 text-base font-medium text-center">Live Pts</th>
+                <th class="px-3 py-2 text-base font-medium text-center">GW Pts</th>
+                <th class="px-3 py-2 text-base font-medium text-center">Change</th>
+              </tr>
+            </thead>
+            <tbody id="liveStandingsTableBody">
+            </tbody>
+          </table>
+        </div>
+        <div class="text-xs text-gray-400 mt-2 text-center">
+          Last updated: <span id="lastUpdated"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl">
       
       <div id="statusMessage" class="text-center text-sm text-gray-400 mb-4"></div>
@@ -58,6 +93,14 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const leagueId = '870661';
 
+      // Elements for live standings
+      const liveStandingsStatus = document.getElementById('liveStandingsStatus');
+      const liveStandingsContainer = document.getElementById('liveStandingsContainer');
+      const liveStandingsTableBody = document.getElementById('liveStandingsTableBody');
+      const liveGameweekTitle = document.getElementById('liveGameweekTitle');
+      const lastUpdated = document.getElementById('lastUpdated');
+      const refreshButton = document.getElementById('refreshButton');
+
       // Elements for the first table (Auto-Subs)
       const statusMessage = document.getElementById('statusMessage');
       const resultsContainer = document.getElementById('resultsContainer');
@@ -70,11 +113,83 @@
       const transferCostTableBody = document.getElementById('transferCostTableBody');
       const transferCostGameweekTitle = document.getElementById('transferCostGameweekTitle');
 
+      // Function to get position change arrow and color
+      const getPositionChangeDisplay = (positionChange, changeDirection) => {
+        if (changeDirection === 'same') {
+          return '<span class="text-gray-400">-</span>';
+        } else if (changeDirection === 'up') {
+          return `<span class="text-green-400 font-bold">↑${positionChange}</span>`;
+        } else {
+          return `<span class="text-red-400 font-bold">↓${Math.abs(positionChange)}</span>`;
+        }
+      };
+
+      // Function to fetch and display live standings
+      const fetchLiveStandings = async () => {
+        liveStandingsStatus.textContent = 'Fetching live standings...';
+        liveStandingsContainer.classList.add('hidden');
+
+        try {
+          const response = await fetch(`/api/get-live-standings?leagueId=${leagueId}`);
+          const data = await response.json();
+
+          if (response.ok) {
+            liveStandingsStatus.textContent = '';
+            liveGameweekTitle.textContent = `Gameweek ${data.gameweek} - Live Standings`;
+
+            // Clear existing rows
+            liveStandingsTableBody.innerHTML = '';
+
+            if (data.results.length === 0) {
+              liveStandingsTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
+            } else {
+              data.results.forEach((manager) => {
+                const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
+
+                const positionChangeHtml = getPositionChangeDisplay(manager.positionChange, manager.changeDirection);
+
+                row.innerHTML = `
+                  <td class="px-3 py-2 font-bold text-lg">${manager.currentPosition}</td>
+                  <td class="px-3 py-2">
+                    <div class="font-semibold">${manager.teamName}</div>
+                    <div class="text-sm text-gray-400">${manager.managerName}</div>
+                  </td>
+                  <td class="px-3 py-2 text-center font-bold text-blue-400">${manager.livePoints}</td>
+                  <td class="px-3 py-2 text-center font-bold text-yellow-400">${manager.pointsThisWeek}</td>
+                  <td class="px-3 py-2 text-center">${positionChangeHtml}</td>
+                `;
+                liveStandingsTableBody.appendChild(row);
+              });
+            }
+
+            // Update last updated time
+            lastUpdated.textContent = new Date().toLocaleTimeString();
+            liveStandingsContainer.classList.remove('hidden');
+
+          } else {
+            liveStandingsStatus.textContent = data.error || 'Failed to fetch live standings.';
+          }
+
+        } catch (error) {
+          console.error('Fetch live standings error:', error);
+          liveStandingsStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
+        }
+      };
+
+      // Refresh button event listener
+      refreshButton.addEventListener('click', fetchLiveStandings);
+
       // Initialize status messages
+      liveStandingsStatus.textContent = 'Fetching live standings...';
       statusMessage.textContent = 'Fetching auto-sub data...';
       transferCostStatus.textContent = 'Fetching transfer cost data...';
       resultsContainer.classList.add('hidden');
       transferCostContainer.classList.add('hidden');
+      liveStandingsContainer.classList.add('hidden');
+
+      // Fetch live standings first
+      await fetchLiveStandings();
 
       // Fetch and populate Auto-Sub data
       try {
