@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
 
       try {
         // Get current gameweek live data
-        const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/picks/`);
+        const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/live/`);
         const currentGwData = await currentGwResponse.json();
 
         // Get previous gameweek data to calculate last gameweek total points
@@ -90,7 +90,7 @@ module.exports = async (req, res) => {
           }
         }
 
-        // Calculate live points and this week's points
+        // Calculate live points and this week's points from live endpoint
         const currentGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
         const livePoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
 
