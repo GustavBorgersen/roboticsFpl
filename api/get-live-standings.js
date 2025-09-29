@@ -59,7 +59,7 @@ module.exports = async (req, res) => {
       return res.status(404).json({ error: 'League not found. Please check the League ID.' });
     }
 
-    // Step 3: Get live data for each manager
+    // Step 3: Get live data for each manager and calculate proper last gameweek positions
     console.log('Step 3: Fetching live data for each manager...');
     const liveStandings = [];
 
@@ -72,17 +72,21 @@ module.exports = async (req, res) => {
         const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/picks/`);
         const currentGwData = await currentGwResponse.json();
 
-        // Get previous gameweek data for position comparison
-        let previousGwPoints = 0;
+        // Get previous gameweek data to calculate last gameweek total points
+        let lastGameweekTotalPoints = 0;
         if (currentGameweek > 1) {
           try {
             const previousGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek - 1}/picks/`);
             const previousGwData = await previousGwResponse.json();
             if (previousGwData.entry_history) {
-              previousGwPoints = previousGwData.entry_history.total_points;
+              lastGameweekTotalPoints = previousGwData.entry_history.total_points;
             }
           } catch (error) {
             console.warn(`Could not fetch previous gameweek data for manager ${managerId}`);
+            // Fallback: use current total minus current gameweek points
+            const currentGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
+            const currentTotal = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
+            lastGameweekTotalPoints = currentTotal - currentGwPoints;
           }
         }
 
@@ -90,16 +94,13 @@ module.exports = async (req, res) => {
         const currentGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
         const livePoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
 
-        // Find last week's position (current position in league standings)
-        const lastWeekPosition = manager.rank;
-
         liveStandings.push({
           managerId: managerId,
           managerName: manager.player_name,
           teamName: manager.entry_name,
           livePoints: livePoints,
           pointsThisWeek: currentGwPoints,
-          lastWeekPosition: lastWeekPosition,
+          lastGameweekTotalPoints: lastGameweekTotalPoints,
           lastWeekPoints: manager.total
         });
 
@@ -115,24 +116,36 @@ module.exports = async (req, res) => {
           teamName: manager.entry_name,
           livePoints: manager.total,
           pointsThisWeek: 0,
-          lastWeekPosition: manager.rank,
+          lastGameweekTotalPoints: manager.total,
           lastWeekPoints: manager.total
         });
       }
     }
 
-    // Step 4: Sort by live points and calculate position changes
-    console.log('Step 4: Calculating live positions and changes...');
+    // Step 4: Calculate last gameweek positions based on last gameweek total points
+    console.log('Step 4: Calculating last gameweek positions...');
+    const lastGameweekStandings = [...liveStandings].sort((a, b) => b.lastGameweekTotalPoints - a.lastGameweekTotalPoints);
+
+    // Create a map of manager ID to last gameweek position
+    const lastGameweekPositions = new Map();
+    lastGameweekStandings.forEach((manager, index) => {
+      lastGameweekPositions.set(manager.managerId, index + 1);
+    });
+
+    // Step 5: Sort by live points and calculate position changes
+    console.log('Step 5: Calculating live positions and changes...');
     liveStandings.sort((a, b) => b.livePoints - a.livePoints);
 
-    // Add current live position and calculate change
+    // Add current live position and calculate change from last gameweek
     const results = liveStandings.map((manager, index) => {
       const currentPosition = index + 1;
-      const positionChange = manager.lastWeekPosition - currentPosition;
+      const lastGameweekPosition = lastGameweekPositions.get(manager.managerId) || currentPosition;
+      const positionChange = lastGameweekPosition - currentPosition;
 
       return {
         ...manager,
         currentPosition: currentPosition,
+        lastGameweekPosition: lastGameweekPosition,
         positionChange: positionChange,
         changeDirection: positionChange > 0 ? 'up' : positionChange < 0 ? 'down' : 'same'
       };
