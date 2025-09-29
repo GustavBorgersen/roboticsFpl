@@ -59,8 +59,24 @@ module.exports = async (req, res) => {
       return res.status(404).json({ error: 'League not found. Please check the League ID.' });
     }
 
-    // Step 3: Get live data for each manager and calculate proper last gameweek positions
-    console.log('Step 3: Fetching live data for each manager...');
+    // Step 3: Get live player data for the current gameweek
+    console.log('Step 3: Fetching live player data...');
+    let livePlayerData = {};
+    try {
+      const liveResponse = await fetchWithRetry(`https://fantasy.premierleague.com/api/event/${currentGameweek}/live/`);
+      const liveData = await liveResponse.json();
+      // Create a map of player_id -> live_points for quick lookup
+      livePlayerData = liveData.elements.reduce((acc, player) => {
+        acc[player.id] = player.stats.total_points;
+        return acc;
+      }, {});
+      console.log(`Live data fetched for ${Object.keys(livePlayerData).length} players`);
+    } catch (error) {
+      console.warn('Could not fetch live player data, will use static points:', error.message);
+    }
+
+    // Step 4: Get data for each manager and calculate live points
+    console.log('Step 4: Processing each manager...');
     const liveStandings = [];
 
     for (const manager of leagueData.standings.results) {
@@ -68,8 +84,8 @@ module.exports = async (req, res) => {
       console.log(`Processing manager: ${manager.player_name} (ID: ${managerId})`);
 
       try {
-        // Get current gameweek live data
-        const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/live/`);
+        // Get current gameweek picks
+        const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/picks/`);
         const currentGwData = await currentGwResponse.json();
 
         // Get previous gameweek data to calculate last gameweek total points
@@ -90,16 +106,40 @@ module.exports = async (req, res) => {
           }
         }
 
-        // Calculate live points and this week's points from live endpoint
-        const currentGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
-        const livePoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
+        // Calculate live points by combining picks with live player data
+        const staticGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
+        const staticTotalPoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
+
+        // Calculate live gameweek points if live data is available
+        let liveGwPoints = staticGwPoints;
+        if (Object.keys(livePlayerData).length > 0 && currentGwData.picks) {
+          liveGwPoints = 0;
+          currentGwData.picks.forEach(pick => {
+            const playerId = pick.element;
+            const playerLivePoints = livePlayerData[playerId] || 0;
+            const multiplier = pick.multiplier;
+            liveGwPoints += playerLivePoints * multiplier;
+          });
+
+          // Add any automatic substitution points
+          if (currentGwData.automatic_subs) {
+            currentGwData.automatic_subs.forEach(sub => {
+              const subInPoints = livePlayerData[sub.element_in] || 0;
+              const subOutPoints = livePlayerData[sub.element_out] || 0;
+              liveGwPoints += subInPoints - subOutPoints;
+            });
+          }
+        }
+
+        // Calculate live total points
+        const livePoints = staticTotalPoints - staticGwPoints + liveGwPoints;
 
         liveStandings.push({
           managerId: managerId,
           managerName: manager.player_name,
           teamName: manager.entry_name,
           livePoints: livePoints,
-          pointsThisWeek: currentGwPoints,
+          pointsThisWeek: liveGwPoints,
           lastGameweekTotalPoints: lastGameweekTotalPoints,
           lastWeekPoints: manager.total
         });
@@ -122,8 +162,8 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Step 4: Calculate last gameweek positions based on last gameweek total points
-    console.log('Step 4: Calculating last gameweek positions...');
+    // Step 5: Calculate last gameweek positions based on last gameweek total points
+    console.log('Step 5: Calculating last gameweek positions...');
     const lastGameweekStandings = [...liveStandings].sort((a, b) => b.lastGameweekTotalPoints - a.lastGameweekTotalPoints);
 
     // Create a map of manager ID to last gameweek position
@@ -132,8 +172,8 @@ module.exports = async (req, res) => {
       lastGameweekPositions.set(manager.managerId, index + 1);
     });
 
-    // Step 5: Sort by live points and calculate position changes
-    console.log('Step 5: Calculating live positions and changes...');
+    // Step 6: Sort by live points and calculate position changes
+    console.log('Step 6: Calculating live positions and changes...');
     liveStandings.sort((a, b) => b.livePoints - a.livePoints);
 
     // Add current live position and calculate change from last gameweek
