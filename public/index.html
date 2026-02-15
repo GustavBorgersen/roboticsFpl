@@ -124,182 +124,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const leagueId = '870661';
 
-      // Elements for live standings
-      const liveStandingsStatus = document.getElementById('liveStandingsStatus');
-      const liveStandingsContainer = document.getElementById('liveStandingsContainer');
-      const liveStandingsTableBody = document.getElementById('liveStandingsTableBody');
-      const liveGameweekTitle = document.getElementById('liveGameweekTitle');
-      const lastUpdated = document.getElementById('lastUpdated');
-      const refreshButton = document.getElementById('refreshButton');
-
-      // Elements for the first table (Auto-Subs)
-      const statusMessage = document.getElementById('statusMessage');
-      const resultsContainer = document.getElementById('resultsContainer');
-      const resultsTableBody = document.getElementById('resultsTableBody');
-      const gameweekTitle = document.getElementById('gameweekTitle');
-
-      // Elements for the second table (Transfer Costs)
-      const transferCostStatus = document.getElementById('transferCostStatus');
-      const transferCostContainer = document.getElementById('transferCostContainer');
-      const transferCostTableBody = document.getElementById('transferCostTableBody');
-      const transferCostGameweekTitle = document.getElementById('transferCostGameweekTitle');
-
-      // Function to get position change arrow and color
-      const getPositionChangeDisplay = (positionChange, changeDirection) => {
-        if (changeDirection === 'same') {
-          return '<span class="text-gray-400">-</span>';
-        } else if (changeDirection === 'up') {
-          return `<span class="text-green-400 font-bold">↑${positionChange}</span>`;
-        } else {
-          return `<span class="text-red-400 font-bold">↓${Math.abs(positionChange)}</span>`;
-        }
-      };
-
-      // Function to fetch and display live standings
-      const fetchLiveStandings = async () => {
-        liveStandingsStatus.textContent = 'Fetching live standings...';
-        liveStandingsContainer.classList.add('hidden');
-
-        try {
-          const response = await fetch(`/api/get-live-standings?leagueId=${leagueId}`);
-          const data = await response.json();
-
-          if (response.ok) {
-            liveStandingsStatus.textContent = '';
-            liveGameweekTitle.textContent = `Gameweek ${data.gameweek} - Live Standings`;
-
-            // Clear existing rows
-            liveStandingsTableBody.innerHTML = '';
-
-            if (data.results.length === 0) {
-              liveStandingsTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
-            } else {
-              data.results.forEach((manager) => {
-                const row = document.createElement('tr');
-                row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
-
-                const positionChangeHtml = getPositionChangeDisplay(manager.positionChange, manager.changeDirection);
-
-                row.innerHTML = `
-                  <td class="px-3 py-2 font-bold text-lg">${manager.currentPosition}</td>
-                  <td class="px-3 py-2">
-                    <div class="font-semibold">${manager.teamName}</div>
-                    <div class="text-sm text-gray-400">${manager.managerName}</div>
-                  </td>
-                  <td class="px-3 py-2 text-center font-bold text-blue-400">${manager.livePoints}</td>
-                  <td class="px-3 py-2 text-center font-bold text-yellow-400">${manager.pointsThisWeek}</td>
-                  <td class="px-3 py-2 text-center">${positionChangeHtml}</td>
-                `;
-                liveStandingsTableBody.appendChild(row);
-              });
-            }
-
-            // Update last updated time
-            lastUpdated.textContent = new Date().toLocaleTimeString();
-            liveStandingsContainer.classList.remove('hidden');
-
-            // Populate What-If dropdown
-            const whatIfSelect = document.getElementById('whatIfManagerSelect');
-            whatIfSelect.innerHTML = '<option value="">-- Select a manager --</option>';
-            data.results.forEach(manager => {
-              const option = document.createElement('option');
-              option.value = manager.managerId;
-              option.textContent = `${manager.teamName} (${manager.managerName})`;
-              whatIfSelect.appendChild(option);
-            });
-
-          } else {
-            liveStandingsStatus.textContent = data.error || 'Failed to fetch live standings.';
-          }
-
-        } catch (error) {
-          console.error('Fetch live standings error:', error);
-          liveStandingsStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
-        }
-      };
-
-      // Refresh button event listener
-      refreshButton.addEventListener('click', fetchLiveStandings);
-
-      // Initialize status messages
-      liveStandingsStatus.textContent = 'Fetching live standings...';
-      statusMessage.textContent = 'Fetching auto-sub data...';
-      transferCostStatus.textContent = 'Fetching transfer cost data...';
-      resultsContainer.classList.add('hidden');
-      transferCostContainer.classList.add('hidden');
-      liveStandingsContainer.classList.add('hidden');
-
-      // Fetch live standings first
-      await fetchLiveStandings();
-
-      // Fetch and populate Auto-Sub data
-      try {
-        const response = await fetch(`/api/get-auto-subs?leagueId=${leagueId}`);
-        const data = await response.json();
-
-        if (response.ok) {
-          statusMessage.textContent = '';
-          gameweekTitle.textContent = `Den smutsiga sanningen... (till och med gameweek ${data.gameweek})`;
-          
-          if (data.results.length === 0) {
-            resultsTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No auto-sub points found for this league.</td></tr>';
-          } else {
-            data.results.forEach((result, index) => {
-              const row = document.createElement('tr');
-              row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
-              row.innerHTML = `
-                <td class="px-2 py-2 font-semibold">${index + 1}</td>
-                <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
-                <td class="px-2 py-2 text-right font-bold text-green-400">${result.totalAutoSubPoints}</td>
-              `;
-              resultsTableBody.appendChild(row);
-            });
-          }
-          resultsContainer.classList.remove('hidden');
-
-        } else {
-          statusMessage.textContent = data.error || 'Failed to fetch auto-sub data.';
-        }
-
-      } catch (error) {
-        console.error('Fetch auto-sub error:', error);
-        statusMessage.textContent = 'An unexpected error occurred. Please check your network connection.';
-      }
-
-      // Fetch and populate Transfer Cost data
-      try {
-        const response = await fetch(`/api/get-transfer-cost?leagueId=${leagueId}`);
-        const data = await response.json();
-
-        if (response.ok) {
-          transferCostStatus.textContent = '';
-          transferCostGameweekTitle.textContent = `Håkan WCs (Till och med gameweek ${data.gameweek})`;
-          
-          if (data.results.length === 0) {
-            transferCostTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No transfer cost points found for this league.</td></tr>';
-          } else {
-            data.results.forEach((result, index) => {
-              const row = document.createElement('tr');
-              row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
-              row.innerHTML = `
-                <td class="px-2 py-2 font-semibold">${index + 1}</td>
-                <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
-                <td class="px-2 py-2 text-right font-bold text-red-400">${result.totalTransferCost}</td>
-              `;
-              transferCostTableBody.appendChild(row);
-            });
-          }
-          transferCostContainer.classList.remove('hidden');
-
-        } else {
-          transferCostStatus.textContent = data.error || 'Failed to fetch transfer cost data.';
-        }
-      } catch (error) {
-        console.error('Fetch transfer cost error:', error);
-        transferCostStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
-      }
-
-      // --- What-If Branching Chart ---
+      // --- What-If Branching Chart (setup first so it's interactive immediately) ---
       let whatIfChartInstance = null;
 
       const whatIfManagerSelect = document.getElementById('whatIfManagerSelect');
@@ -450,6 +275,188 @@
       };
 
       whatIfLoadButton.addEventListener('click', loadWhatIfChart);
+
+      // --- Elements for live standings ---
+      const liveStandingsStatus = document.getElementById('liveStandingsStatus');
+      const liveStandingsContainer = document.getElementById('liveStandingsContainer');
+      const liveStandingsTableBody = document.getElementById('liveStandingsTableBody');
+      const liveGameweekTitle = document.getElementById('liveGameweekTitle');
+      const lastUpdated = document.getElementById('lastUpdated');
+      const refreshButton = document.getElementById('refreshButton');
+
+      // Elements for the first table (Auto-Subs)
+      const statusMessage = document.getElementById('statusMessage');
+      const resultsContainer = document.getElementById('resultsContainer');
+      const resultsTableBody = document.getElementById('resultsTableBody');
+      const gameweekTitle = document.getElementById('gameweekTitle');
+
+      // Elements for the second table (Transfer Costs)
+      const transferCostStatus = document.getElementById('transferCostStatus');
+      const transferCostContainer = document.getElementById('transferCostContainer');
+      const transferCostTableBody = document.getElementById('transferCostTableBody');
+      const transferCostGameweekTitle = document.getElementById('transferCostGameweekTitle');
+
+      // Function to get position change arrow and color
+      const getPositionChangeDisplay = (positionChange, changeDirection) => {
+        if (changeDirection === 'same') {
+          return '<span class="text-gray-400">-</span>';
+        } else if (changeDirection === 'up') {
+          return `<span class="text-green-400 font-bold">↑${positionChange}</span>`;
+        } else {
+          return `<span class="text-red-400 font-bold">↓${Math.abs(positionChange)}</span>`;
+        }
+      };
+
+      // Function to fetch and display live standings
+      const fetchLiveStandings = async () => {
+        liveStandingsStatus.textContent = 'Fetching live standings...';
+        liveStandingsContainer.classList.add('hidden');
+
+        try {
+          const response = await fetch(`/api/get-live-standings?leagueId=${leagueId}`);
+          const data = await response.json();
+
+          if (response.ok) {
+            liveStandingsStatus.textContent = '';
+            liveGameweekTitle.textContent = `Gameweek ${data.gameweek} - Live Standings`;
+
+            // Clear existing rows
+            liveStandingsTableBody.innerHTML = '';
+
+            if (data.results.length === 0) {
+              liveStandingsTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
+            } else {
+              data.results.forEach((manager) => {
+                const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
+
+                const positionChangeHtml = getPositionChangeDisplay(manager.positionChange, manager.changeDirection);
+
+                row.innerHTML = `
+                  <td class="px-3 py-2 font-bold text-lg">${manager.currentPosition}</td>
+                  <td class="px-3 py-2">
+                    <div class="font-semibold">${manager.teamName}</div>
+                    <div class="text-sm text-gray-400">${manager.managerName}</div>
+                  </td>
+                  <td class="px-3 py-2 text-center font-bold text-blue-400">${manager.livePoints}</td>
+                  <td class="px-3 py-2 text-center font-bold text-yellow-400">${manager.pointsThisWeek}</td>
+                  <td class="px-3 py-2 text-center">${positionChangeHtml}</td>
+                `;
+                liveStandingsTableBody.appendChild(row);
+              });
+            }
+
+            // Update last updated time
+            lastUpdated.textContent = new Date().toLocaleTimeString();
+            liveStandingsContainer.classList.remove('hidden');
+
+            // Populate What-If dropdown
+            whatIfManagerSelect.innerHTML = '<option value="">-- Select a manager --</option>';
+            data.results.forEach(manager => {
+              const option = document.createElement('option');
+              option.value = manager.managerId;
+              option.textContent = `${manager.teamName} (${manager.managerName})`;
+              whatIfManagerSelect.appendChild(option);
+            });
+
+          } else {
+            liveStandingsStatus.textContent = data.error || 'Failed to fetch live standings.';
+          }
+
+        } catch (error) {
+          console.error('Fetch live standings error:', error);
+          liveStandingsStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
+        }
+      };
+
+      // Function to fetch and populate Auto-Sub data
+      const fetchAutoSubs = async () => {
+        try {
+          const response = await fetch(`/api/get-auto-subs?leagueId=${leagueId}`);
+          const data = await response.json();
+
+          if (response.ok) {
+            statusMessage.textContent = '';
+            gameweekTitle.textContent = `Den smutsiga sanningen... (till och med gameweek ${data.gameweek})`;
+
+            if (data.results.length === 0) {
+              resultsTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No auto-sub points found for this league.</td></tr>';
+            } else {
+              data.results.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
+                row.innerHTML = `
+                  <td class="px-2 py-2 font-semibold">${index + 1}</td>
+                  <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
+                  <td class="px-2 py-2 text-right font-bold text-green-400">${result.totalAutoSubPoints}</td>
+                `;
+                resultsTableBody.appendChild(row);
+              });
+            }
+            resultsContainer.classList.remove('hidden');
+
+          } else {
+            statusMessage.textContent = data.error || 'Failed to fetch auto-sub data.';
+          }
+
+        } catch (error) {
+          console.error('Fetch auto-sub error:', error);
+          statusMessage.textContent = 'An unexpected error occurred. Please check your network connection.';
+        }
+      };
+
+      // Function to fetch and populate Transfer Cost data
+      const fetchTransferCosts = async () => {
+        try {
+          const response = await fetch(`/api/get-transfer-cost?leagueId=${leagueId}`);
+          const data = await response.json();
+
+          if (response.ok) {
+            transferCostStatus.textContent = '';
+            transferCostGameweekTitle.textContent = `Håkan WCs (Till och med gameweek ${data.gameweek})`;
+
+            if (data.results.length === 0) {
+              transferCostTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No transfer cost points found for this league.</td></tr>';
+            } else {
+              data.results.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-600', 'hover:bg-gray-600', 'transition-colors');
+                row.innerHTML = `
+                  <td class="px-2 py-2 font-semibold">${index + 1}</td>
+                  <td class="px-2 py-2">${result.teamName} (${result.managerName})</td>
+                  <td class="px-2 py-2 text-right font-bold text-red-400">${result.totalTransferCost}</td>
+                `;
+                transferCostTableBody.appendChild(row);
+              });
+            }
+            transferCostContainer.classList.remove('hidden');
+
+          } else {
+            transferCostStatus.textContent = data.error || 'Failed to fetch transfer cost data.';
+          }
+        } catch (error) {
+          console.error('Fetch transfer cost error:', error);
+          transferCostStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
+        }
+      };
+
+      // Refresh button event listener
+      refreshButton.addEventListener('click', fetchLiveStandings);
+
+      // Initialize status messages
+      liveStandingsStatus.textContent = 'Fetching live standings...';
+      statusMessage.textContent = 'Fetching auto-sub data...';
+      transferCostStatus.textContent = 'Fetching transfer cost data...';
+      resultsContainer.classList.add('hidden');
+      transferCostContainer.classList.add('hidden');
+      liveStandingsContainer.classList.add('hidden');
+
+      // Fetch live standings first (populates What-If dropdown)
+      await fetchLiveStandings();
+
+      // Fetch auto-subs and transfer costs in parallel (don't block each other)
+      fetchAutoSubs();
+      fetchTransferCosts();
     });
   </script>
 
