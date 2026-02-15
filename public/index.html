@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Den smutsiga sanningen</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; }
@@ -87,6 +88,36 @@
         </div>
     </div>
 
+    <!-- What-If Branching Chart -->
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-4xl">
+      <h2 class="text-2xl font-semibold text-center text-purple-400 mb-4">What-If: Frozen Team Chart</h2>
+      <p class="text-sm text-gray-400 text-center mb-4">
+        See how your points would compare if you froze your team at each transfer gameweek and never changed it again.
+      </p>
+
+      <div class="flex items-center gap-4 mb-6">
+        <label for="whatIfManagerSelect" class="text-sm text-gray-400 whitespace-nowrap">Select Manager:</label>
+        <select
+          id="whatIfManagerSelect"
+          class="bg-gray-700 text-gray-200 border border-gray-600 rounded px-3 py-2 flex-grow focus:outline-none focus:border-purple-400"
+        >
+          <option value="">-- Loading managers... --</option>
+        </select>
+        <button
+          id="whatIfLoadButton"
+          class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Load Chart
+        </button>
+      </div>
+
+      <div id="whatIfStatus" class="text-center text-sm text-gray-400 mb-4"></div>
+
+      <div id="whatIfChartContainer" class="hidden relative" style="height: 400px;">
+        <canvas id="whatIfChart"></canvas>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -166,6 +197,16 @@
             // Update last updated time
             lastUpdated.textContent = new Date().toLocaleTimeString();
             liveStandingsContainer.classList.remove('hidden');
+
+            // Populate What-If dropdown
+            const whatIfSelect = document.getElementById('whatIfManagerSelect');
+            whatIfSelect.innerHTML = '<option value="">-- Select a manager --</option>';
+            data.results.forEach(manager => {
+              const option = document.createElement('option');
+              option.value = manager.managerId;
+              option.textContent = `${manager.teamName} (${manager.managerName})`;
+              whatIfSelect.appendChild(option);
+            });
 
           } else {
             liveStandingsStatus.textContent = data.error || 'Failed to fetch live standings.';
@@ -257,6 +298,158 @@
         console.error('Fetch transfer cost error:', error);
         transferCostStatus.textContent = 'An unexpected error occurred. Please check your network connection.';
       }
+
+      // --- What-If Branching Chart ---
+      let whatIfChartInstance = null;
+
+      const whatIfManagerSelect = document.getElementById('whatIfManagerSelect');
+      const whatIfLoadButton = document.getElementById('whatIfLoadButton');
+      const whatIfStatus = document.getElementById('whatIfStatus');
+      const whatIfChartContainer = document.getElementById('whatIfChartContainer');
+      const whatIfChartCanvas = document.getElementById('whatIfChart');
+
+      const generateBranchColors = (count) => {
+        const colors = [];
+        for (let i = 0; i < count; i++) {
+          const hue = (30 + (i * 360 / count)) % 360;
+          colors.push(`hsla(${hue}, 70%, 65%, 0.6)`);
+        }
+        return colors;
+      };
+
+      const renderWhatIfChart = (data) => {
+        if (whatIfChartInstance) {
+          whatIfChartInstance.destroy();
+          whatIfChartInstance = null;
+        }
+
+        const gwLabels = data.actual.map(d => `GW${d.gw}`);
+
+        const actualDataset = {
+          label: 'Actual',
+          data: data.actual.map(d => d.points),
+          borderColor: 'rgba(96, 165, 250, 1)',
+          backgroundColor: 'transparent',
+          borderWidth: 3,
+          pointRadius: 3,
+          tension: 0.1,
+          order: 0
+        };
+
+        const branchColors = generateBranchColors(data.branches.length);
+
+        const branchDatasets = data.branches.map((branch, idx) => {
+          const paddedData = data.actual.map(d => {
+            const match = branch.data.find(b => b.gw === d.gw);
+            return match ? match.points : null;
+          });
+
+          return {
+            label: branch.label,
+            data: paddedData,
+            borderColor: branchColors[idx],
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            borderDash: [4, 2],
+            tension: 0.1,
+            spanGaps: false,
+            order: idx + 1
+          };
+        });
+
+        const ctx = whatIfChartCanvas.getContext('2d');
+        whatIfChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: gwLabels,
+            datasets: [actualDataset, ...branchDatasets]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: 'index',
+              intersect: false
+            },
+            plugins: {
+              legend: {
+                display: true,
+                position: 'bottom',
+                labels: {
+                  color: '#d1d5db',
+                  boxWidth: 16,
+                  font: { size: 10 },
+                  padding: 8
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  title: (items) => items[0].label,
+                  label: (item) => `${item.dataset.label}: ${item.parsed.y} pts`
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#9ca3af', font: { size: 10 } },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              },
+              y: {
+                ticks: { color: '#9ca3af' },
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                title: {
+                  display: true,
+                  text: 'Cumulative Points',
+                  color: '#9ca3af'
+                }
+              }
+            }
+          }
+        });
+      };
+
+      const loadWhatIfChart = async () => {
+        const managerId = whatIfManagerSelect.value;
+        if (!managerId) {
+          whatIfStatus.textContent = 'Please select a manager.';
+          return;
+        }
+
+        whatIfStatus.textContent = 'Computing what-if branches... (this may take 20-40 seconds)';
+        whatIfLoadButton.disabled = true;
+        whatIfChartContainer.classList.add('hidden');
+
+        try {
+          const response = await fetch(`/api/get-what-if?leagueId=${leagueId}&managerId=${managerId}`);
+
+          if (response.status === 504) {
+            whatIfStatus.textContent = 'Request timed out. The FPL API was too slow. Try again in a moment.';
+            whatIfLoadButton.disabled = false;
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            whatIfStatus.textContent = data.error || 'Failed to load what-if data.';
+            whatIfLoadButton.disabled = false;
+            return;
+          }
+
+          whatIfStatus.textContent = '';
+          renderWhatIfChart(data);
+          whatIfChartContainer.classList.remove('hidden');
+
+        } catch (err) {
+          console.error('What-if chart error:', err);
+          whatIfStatus.textContent = 'An error occurred. Please try again.';
+        } finally {
+          whatIfLoadButton.disabled = false;
+        }
+      };
+
+      whatIfLoadButton.addEventListener('click', loadWhatIfChart);
     });
   </script>
 
