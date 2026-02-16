@@ -3,6 +3,7 @@ const LEAGUE_API_URL = 'https://fantasy.premierleague.com/api/leagues-classic/';
 const TEAM_API_URL = 'https://fantasy.premierleague.com/api/entry/';
 const BOOTSTRAP_URL = 'https://fantasy.premierleague.com/api/bootstrap-static/';
 const PLAYER_API_URL = 'https://fantasy.premierleague.com/api/element-summary/';
+const FPL_HEADERS = { 'User-Agent': 'RoboticsFPL/1.0' };
 
 // Vercel serverless function entry point
 module.exports = async (req, res) => {
@@ -18,14 +19,14 @@ module.exports = async (req, res) => {
 
     // Step 1: Get general data to find out the current gameweek
     console.log('Step 1: Fetching current gameweek...');
-    const bootstrapResponse = await fetch(BOOTSTRAP_URL);
+    const bootstrapResponse = await fetch(BOOTSTRAP_URL, { headers: FPL_HEADERS });
     const bootstrapData = await bootstrapResponse.json();
     const currentGameweek = bootstrapData.events.find(event => event.is_current).id;
     console.log(`Current Gameweek is: ${currentGameweek}`);
 
     // Step 2: Fetch the league standings to get a list of all managers
     console.log(`Step 2: Fetching league standings for league ID: ${leagueId}`);
-    const leagueResponse = await fetch(`${LEAGUE_API_URL}${leagueId}/standings/`);
+    const leagueResponse = await fetch(`${LEAGUE_API_URL}${leagueId}/standings/`, { headers: FPL_HEADERS });
     const leagueData = await leagueResponse.json();
 
     if (leagueData.detail === 'Not found.') {
@@ -49,7 +50,7 @@ module.exports = async (req, res) => {
       console.log(`Processing manager: ${manager.player_name} (ID: ${managerId})`);
 
       for (let gw = 1; gw <= currentGameweek; gw++) {
-        const picksResponse = await fetch(`${TEAM_API_URL}${managerId}/event/${gw}/picks/`);
+        const picksResponse = await fetch(`${TEAM_API_URL}${managerId}/event/${gw}/picks/`, { headers: FPL_HEADERS });
         const picksData = await picksResponse.json();
 
         if (picksData.automatic_subs && picksData.automatic_subs.length > 0) {
@@ -59,7 +60,7 @@ module.exports = async (req, res) => {
             console.log(`  Auto-subbed player in: ${playerInId}`);
 
             // NEW: Fetch the specific player's data to get their points for this gameweek
-            const playerResponse = await fetch(`${PLAYER_API_URL}${playerInId}/`);
+            const playerResponse = await fetch(`${PLAYER_API_URL}${playerInId}/`, { headers: FPL_HEADERS });
             const playerData = await playerResponse.json();
 
             const gameweekHistory = playerData.history.find(event => event.round === gw);

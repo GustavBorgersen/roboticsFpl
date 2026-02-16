@@ -6,10 +6,12 @@ const LIVE_API_URL = 'https://fantasy.premierleague.com/api/event/';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const FPL_HEADERS = { 'User-Agent': 'RoboticsFPL/1.0' };
+
 const fetchWithRetry = async (url, retries = 3, delay = 1000) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: FPL_HEADERS });
       if (response.ok) {
         return response;
       }
