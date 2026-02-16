@@ -280,13 +280,14 @@
         });
         whatIfTree.appendChild(actualCircle);
 
-        // Actual leaf box (above the trunk)
+        // Actual leaf box (below the trunk, same as branch leaves)
         const actualLeafX = actualX - leafW / 2;
-        const actualLeafY = actualY - leafH - 20;
+        const actualBranchEndY = trunkY + branchLineLen;
+        const actualLeafY = actualBranchEndY + 6;
 
         const actualLine = svgEl('line', {
-          x1: actualX, y1: actualY - nodeR - 2,
-          x2: actualX, y2: actualLeafY + leafH,
+          x1: actualX, y1: actualY + nodeR + 2,
+          x2: actualX, y2: actualBranchEndY,
           stroke: '#60a5fa', 'stroke-width': 2
         });
         whatIfTree.appendChild(actualLine);
