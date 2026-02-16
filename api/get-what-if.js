@@ -160,8 +160,20 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Step 6: Determine freeze points (GW 1 + every transfer GW)
-    const allFreezeGWs = [1, ...transferGWs.filter(gw => gw !== 1)].sort((a, b) => a - b);
+    // Step 6: Determine freeze points (GW 1 + every transfer GW, excluding Free Hit GWs)
+    const freeHitGWs = new Set();
+    for (let gw = 1; gw <= currentGW; gw++) {
+      if (picksMap[gw]?.active_chip === 'freehit') {
+        freeHitGWs.add(gw);
+      }
+    }
+    if (freeHitGWs.size > 0) {
+      console.log(`Free Hit GWs (excluded from branches): [${[...freeHitGWs].join(', ')}]`);
+    }
+
+    const allFreezeGWs = [1, ...transferGWs.filter(gw => gw !== 1)]
+      .filter(gw => !freeHitGWs.has(gw))
+      .sort((a, b) => a - b);
     console.log(`Freeze points: [${allFreezeGWs.join(', ')}]`);
 
     // Step 7: Compute branches
