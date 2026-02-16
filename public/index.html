@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Den smutsiga sanningen</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; }
@@ -113,8 +112,8 @@
 
       <div id="whatIfStatus" class="text-center text-sm text-gray-400 mb-4"></div>
 
-      <div id="whatIfChartContainer" class="hidden relative" style="height: 400px;">
-        <canvas id="whatIfChart"></canvas>
+      <div id="whatIfChartContainer" class="hidden overflow-x-auto">
+        <svg id="whatIfTree"></svg>
       </div>
     </div>
 
@@ -124,114 +123,196 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const leagueId = '870661';
 
-      // --- What-If Branching Chart (setup first so it's interactive immediately) ---
-      let whatIfChartInstance = null;
-
+      // --- What-If Branching Tree (setup first so it's interactive immediately) ---
       const whatIfManagerSelect = document.getElementById('whatIfManagerSelect');
       const whatIfLoadButton = document.getElementById('whatIfLoadButton');
       const whatIfStatus = document.getElementById('whatIfStatus');
       const whatIfChartContainer = document.getElementById('whatIfChartContainer');
-      const whatIfChartCanvas = document.getElementById('whatIfChart');
+      const whatIfTree = document.getElementById('whatIfTree');
+
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+
+      const svgEl = (tag, attrs = {}) => {
+        const el = document.createElementNS(SVG_NS, tag);
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+        return el;
+      };
 
       const generateBranchColors = (count) => {
         const colors = [];
         for (let i = 0; i < count; i++) {
-          const hue = (30 + (i * 360 / count)) % 360;
-          colors.push(`hsla(${hue}, 70%, 65%, 0.6)`);
+          const hue = (30 + (i * 360 / Math.max(count, 1))) % 360;
+          colors.push(`hsl(${hue}, 70%, 65%)`);
         }
         return colors;
       };
 
-      const renderWhatIfChart = (data) => {
-        if (whatIfChartInstance) {
-          whatIfChartInstance.destroy();
-          whatIfChartInstance = null;
+      const renderWhatIfTree = (data) => {
+        // Clear previous SVG content
+        whatIfTree.innerHTML = '';
+
+        const actualFinalPoints = data.actual[data.actual.length - 1]?.points ?? 0;
+
+        // Build trunk nodes: each branch's freezeGW is a node on the trunk
+        const branchMap = new Map(data.branches.map(b => [b.freezeGW, b]));
+        const trunkGWs = data.branches.map(b => b.freezeGW).sort((a, b) => a - b);
+
+        // Layout constants
+        const padding = 40;
+        const nodeSpacingX = 140;
+        const trunkY = 60;
+        const branchLineLen = 70;
+        const leafW = 120;
+        const leafH = 54;
+        const nodeR = 7;
+
+        const totalTrunkNodes = trunkGWs.length + 1; // +1 for "Actual" leaf
+        const svgWidth = Math.max(padding * 2 + totalTrunkNodes * nodeSpacingX + leafW, 400);
+        const svgHeight = trunkY + branchLineLen + leafH + padding + 10;
+
+        whatIfTree.setAttribute('width', svgWidth);
+        whatIfTree.setAttribute('height', svgHeight);
+        whatIfTree.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+
+        const branchColors = generateBranchColors(trunkGWs.length);
+
+        // Draw trunk line segments + nodes
+        const trunkPositions = [];
+        trunkGWs.forEach((gw, i) => {
+          const x = padding + i * nodeSpacingX;
+          trunkPositions.push({ gw, x, y: trunkY });
+        });
+
+        // Actual endpoint position
+        const actualX = padding + trunkGWs.length * nodeSpacingX;
+        const actualY = trunkY;
+
+        // Draw trunk line (full horizontal line from first to actual)
+        if (trunkPositions.length > 0) {
+          const trunkLine = svgEl('line', {
+            x1: trunkPositions[0].x, y1: trunkY,
+            x2: actualX, y2: trunkY,
+            stroke: '#60a5fa', 'stroke-width': 3
+          });
+          whatIfTree.appendChild(trunkLine);
         }
 
-        const gwLabels = data.actual.map(d => `GW${d.gw}`);
-
-        const actualDataset = {
-          label: 'Actual',
-          data: data.actual.map(d => d.points),
-          borderColor: 'rgba(96, 165, 250, 1)',
-          backgroundColor: 'transparent',
-          borderWidth: 3,
-          pointRadius: 3,
-          tension: 0.1,
-          order: 0
-        };
-
-        const branchColors = generateBranchColors(data.branches.length);
-
-        const branchDatasets = data.branches.map((branch, idx) => {
-          const paddedData = data.actual.map(d => {
-            const match = branch.data.find(b => b.gw === d.gw);
-            return match ? match.points : null;
+        // Draw trunk nodes (circles) with GW labels above
+        trunkPositions.forEach((pos, i) => {
+          const circle = svgEl('circle', {
+            cx: pos.x, cy: pos.y, r: nodeR,
+            fill: '#60a5fa', stroke: '#1e3a5f', 'stroke-width': 2
           });
+          whatIfTree.appendChild(circle);
 
-          return {
-            label: branch.label,
-            data: paddedData,
-            borderColor: branchColors[idx],
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            pointRadius: 0,
-            borderDash: [4, 2],
-            tension: 0.1,
-            spanGaps: false,
-            order: idx + 1
-          };
-        });
+          const label = svgEl('text', {
+            x: pos.x, y: pos.y - 16,
+            fill: '#9ca3af', 'font-size': '11', 'text-anchor': 'middle',
+            'font-family': 'Inter, sans-serif'
+          });
+          label.textContent = `GW${pos.gw}`;
+          whatIfTree.appendChild(label);
 
-        const ctx = whatIfChartCanvas.getContext('2d');
-        whatIfChartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: gwLabels,
-            datasets: [actualDataset, ...branchDatasets]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-              mode: 'index',
-              intersect: false
-            },
-            plugins: {
-              legend: {
-                display: true,
-                position: 'bottom',
-                labels: {
-                  color: '#d1d5db',
-                  boxWidth: 16,
-                  font: { size: 10 },
-                  padding: 8
-                }
-              },
-              tooltip: {
-                callbacks: {
-                  title: (items) => items[0].label,
-                  label: (item) => `${item.dataset.label}: ${item.parsed.y} pts`
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: { color: '#9ca3af', font: { size: 10 } },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-              },
-              y: {
-                ticks: { color: '#9ca3af' },
-                grid: { color: 'rgba(255,255,255,0.05)' },
-                title: {
-                  display: true,
-                  text: 'Cumulative Points',
-                  color: '#9ca3af'
-                }
-              }
-            }
+          // Draw branch line going down from trunk node
+          const branch = branchMap.get(pos.gw);
+          if (branch) {
+            const branchEndY = trunkY + branchLineLen;
+            const branchLine = svgEl('line', {
+              x1: pos.x, y1: pos.y + nodeR,
+              x2: pos.x, y2: branchEndY,
+              stroke: branchColors[i], 'stroke-width': 2, 'stroke-dasharray': '4,3'
+            });
+            whatIfTree.appendChild(branchLine);
+
+            // Small circle at branch end
+            const branchDot = svgEl('circle', {
+              cx: pos.x, cy: branchEndY, r: 4,
+              fill: branchColors[i]
+            });
+            whatIfTree.appendChild(branchDot);
+
+            // Branch leaf box
+            const branchFinalPoints = branch.data[branch.data.length - 1]?.points ?? 0;
+            const diff = branchFinalPoints - actualFinalPoints;
+            const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+            const diffColor = diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#9ca3af';
+
+            const leafX = pos.x - leafW / 2;
+            const leafY = branchEndY + 6;
+
+            const rect = svgEl('rect', {
+              x: leafX, y: leafY, width: leafW, height: leafH,
+              rx: 8, ry: 8,
+              fill: '#1f2937', stroke: branchColors[i], 'stroke-width': 1.5
+            });
+            whatIfTree.appendChild(rect);
+
+            const leafLabel = svgEl('text', {
+              x: pos.x, y: leafY + 16,
+              fill: '#d1d5db', 'font-size': '11', 'font-weight': '600',
+              'text-anchor': 'middle', 'font-family': 'Inter, sans-serif'
+            });
+            leafLabel.textContent = `GW${pos.gw} freeze`;
+            whatIfTree.appendChild(leafLabel);
+
+            const leafPts = svgEl('text', {
+              x: pos.x, y: leafY + 32,
+              fill: '#e5e7eb', 'font-size': '13', 'font-weight': '700',
+              'text-anchor': 'middle', 'font-family': 'Inter, sans-serif'
+            });
+            leafPts.textContent = `${branchFinalPoints} pts`;
+            whatIfTree.appendChild(leafPts);
+
+            const leafDiff = svgEl('text', {
+              x: pos.x, y: leafY + 47,
+              fill: diffColor, 'font-size': '11', 'font-weight': '600',
+              'text-anchor': 'middle', 'font-family': 'Inter, sans-serif'
+            });
+            leafDiff.textContent = diffStr;
+            whatIfTree.appendChild(leafDiff);
           }
         });
+
+        // Draw "Actual" endpoint
+        const actualCircle = svgEl('circle', {
+          cx: actualX, cy: actualY, r: nodeR + 2,
+          fill: '#60a5fa', stroke: '#93c5fd', 'stroke-width': 2
+        });
+        whatIfTree.appendChild(actualCircle);
+
+        // Actual leaf box (above the trunk)
+        const actualLeafX = actualX - leafW / 2;
+        const actualLeafY = actualY - leafH - 20;
+
+        const actualLine = svgEl('line', {
+          x1: actualX, y1: actualY - nodeR - 2,
+          x2: actualX, y2: actualLeafY + leafH,
+          stroke: '#60a5fa', 'stroke-width': 2
+        });
+        whatIfTree.appendChild(actualLine);
+
+        const actualRect = svgEl('rect', {
+          x: actualLeafX, y: actualLeafY, width: leafW, height: leafH,
+          rx: 8, ry: 8,
+          fill: '#1e3a5f', stroke: '#60a5fa', 'stroke-width': 2
+        });
+        whatIfTree.appendChild(actualRect);
+
+        const actualLabel = svgEl('text', {
+          x: actualX, y: actualLeafY + 18,
+          fill: '#93c5fd', 'font-size': '11', 'font-weight': '600',
+          'text-anchor': 'middle', 'font-family': 'Inter, sans-serif'
+        });
+        actualLabel.textContent = 'Actual';
+        whatIfTree.appendChild(actualLabel);
+
+        const actualPts = svgEl('text', {
+          x: actualX, y: actualLeafY + 38,
+          fill: '#e5e7eb', 'font-size': '15', 'font-weight': '700',
+          'text-anchor': 'middle', 'font-family': 'Inter, sans-serif'
+        });
+        actualPts.textContent = `${actualFinalPoints} pts`;
+        whatIfTree.appendChild(actualPts);
       };
 
       const loadWhatIfChart = async () => {
@@ -263,7 +344,7 @@
           }
 
           whatIfStatus.textContent = '';
-          renderWhatIfChart(data);
+          renderWhatIfTree(data);
           whatIfChartContainer.classList.remove('hidden');
 
         } catch (err) {
