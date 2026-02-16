@@ -174,6 +174,14 @@ module.exports = async (req, res) => {
 
       const frozenPicks = frozenPicksData.picks;
 
+      // Normalize chip multipliers for subsequent GWs:
+      // - Triple Captain (3) reverts to normal Captain (2)
+      // - Bench Boost (bench players with multiplier 1) revert to bench (0)
+      const normalizedPicks = frozenPicks.map(p => ({
+        ...p,
+        multiplier: p.position >= 12 ? 0 : (p.multiplier === 3 ? 2 : p.multiplier)
+      }));
+
       // Base points: actual total at end of (freezeGW - 1)
       let basePoints = 0;
       if (freezeGW > 1 && picksMap[freezeGW - 1]?.entry_history) {
@@ -189,7 +197,9 @@ module.exports = async (req, res) => {
           continue;
         }
 
-        const effectiveLineup = simulateAutoSubs(frozenPicks, gwPlayerData[gw]);
+        // Use original multipliers for the freeze GW (chip was active), normalized for subsequent GWs
+        const picksForGW = (gw === freezeGW) ? frozenPicks : normalizedPicks;
+        const effectiveLineup = simulateAutoSubs(picksForGW, gwPlayerData[gw]);
 
         let gwPoints = 0;
         for (const player of effectiveLineup) {
