@@ -88,13 +88,6 @@ module.exports = async (req, res) => {
             liveGwPoints += playerLivePoints * pick.multiplier;
           });
 
-          if (currentGwData.automatic_subs) {
-            currentGwData.automatic_subs.forEach(sub => {
-              const subInPoints = livePlayerData[sub.element_in] || 0;
-              const subOutPoints = livePlayerData[sub.element_out] || 0;
-              liveGwPoints += subInPoints - subOutPoints;
-            });
-          }
         }
 
         const livePoints = staticTotalPoints - staticGwPoints + liveGwPoints;
