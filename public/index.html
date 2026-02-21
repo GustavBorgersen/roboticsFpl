@@ -549,8 +549,13 @@
 
       const POS_COLORS = { 1: '#f59e0b', 2: '#60a5fa', 3: '#34d399', 4: '#f87171' };
 
+      // Instant hover tooltip (shared across all renders)
+      const tooltip = document.createElement('div');
+      tooltip.style.cssText = 'position:fixed;display:none;background:#1f2937;color:#e5e7eb;border:1px solid #4b5563;border-radius:6px;padding:5px 10px;font-size:12px;font-family:Inter,sans-serif;pointer-events:none;z-index:200;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+      document.body.appendChild(tooltip);
+
       const renderContributionsChart = (data) => {
-        const SVG_W = 700;
+        const SVG_W = 1500;
         const LABEL_W = 160;
         const RIGHT_PAD = 16;
         const BAR_AREA_W = SVG_W - LABEL_W - RIGHT_PAD;
@@ -613,11 +618,25 @@
             const rect = svgEl('rect', {
               x: LABEL_W + xOffset, y: y + 4,
               width: clippedW, height: ROW_H - 8,
-              fill: color, rx: 2
+              fill: color, rx: 2, style: 'cursor:default'
             });
-            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.textContent = `${player.name}: ${player.points} pts`;
-            rect.appendChild(title);
+
+            // Instant tooltip via mouse events (no <title> delay)
+            const tipText = `${player.name}: ${player.points} pts`;
+            rect.addEventListener('mouseenter', (e) => {
+              tooltip.textContent = tipText;
+              tooltip.style.display = 'block';
+              tooltip.style.left = (e.clientX + 14) + 'px';
+              tooltip.style.top = (e.clientY - 36) + 'px';
+            });
+            rect.addEventListener('mousemove', (e) => {
+              tooltip.style.left = (e.clientX + 14) + 'px';
+              tooltip.style.top = (e.clientY - 36) + 'px';
+            });
+            rect.addEventListener('mouseleave', () => {
+              tooltip.style.display = 'none';
+            });
+
             svg.appendChild(rect);
 
             if (clippedW > 28) {
