@@ -88,6 +88,24 @@
       </div>
     </div>
 
+    <!-- Season Player Contributions -->
+    <div class="bg-gray-800 p-3 md:p-4 rounded-xl shadow-lg w-full">
+      <div class="flex justify-between items-center mb-1">
+        <h2 class="text-base font-semibold text-teal-400">Season Player Contributions</h2>
+      </div>
+      <p class="text-xs text-gray-400 mb-2">
+        Total season points contributed by each player across all gameweeks (auto-subs included, ordered by season total).
+      </p>
+      <div class="flex flex-wrap gap-3 mb-3 text-xs text-gray-300">
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm inline-block" style="background:#f59e0b"></span>GK</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm inline-block" style="background:#60a5fa"></span>DEF</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm inline-block" style="background:#34d399"></span>MID</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm inline-block" style="background:#f87171"></span>FWD</span>
+      </div>
+      <div id="contributionsStatus" class="text-center text-xs text-gray-400 mb-2"></div>
+      <div id="contributionsChartContainer" class="hidden overflow-x-auto"></div>
+    </div>
+
     <!-- What-If Branching Chart -->
     <div class="bg-gray-800 p-3 md:p-4 rounded-xl shadow-lg w-full">
       <div class="flex justify-between items-center mb-1">
@@ -525,6 +543,132 @@
         }
       };
 
+      // --- Season Player Contributions Chart ---
+      const contributionsStatus = document.getElementById('contributionsStatus');
+      const contributionsChartContainer = document.getElementById('contributionsChartContainer');
+
+      const POS_COLORS = { 1: '#f59e0b', 2: '#60a5fa', 3: '#34d399', 4: '#f87171' };
+
+      const renderContributionsChart = (data) => {
+        const SVG_W = 700;
+        const LABEL_W = 160;
+        const RIGHT_PAD = 16;
+        const BAR_AREA_W = SVG_W - LABEL_W - RIGHT_PAD;
+        const ROW_H = 38;
+        const ROW_GAP = 8;
+
+        const maxTotal = Math.max(...data.managers.map(m => m.totalPoints));
+        const svgH = data.managers.length * (ROW_H + ROW_GAP) + ROW_GAP + 4;
+
+        const svg = svgEl('svg', {
+          width: SVG_W,
+          height: svgH,
+          viewBox: `0 0 ${SVG_W} ${svgH}`
+        });
+
+        data.managers.forEach((manager, i) => {
+          const y = ROW_GAP + i * (ROW_H + ROW_GAP);
+          const barTotalW = (manager.totalPoints / maxTotal) * BAR_AREA_W * 0.85;
+
+          // Team name label
+          const nameText = svgEl('text', {
+            x: LABEL_W - 8, y: y + ROW_H / 2 - 7,
+            fill: '#e5e7eb', 'font-size': '11', 'font-weight': '600',
+            'text-anchor': 'end', 'font-family': 'Inter, sans-serif',
+            'dominant-baseline': 'middle'
+          });
+          nameText.textContent = manager.teamName;
+          svg.appendChild(nameText);
+
+          // Season total label
+          const ptsText = svgEl('text', {
+            x: LABEL_W - 8, y: y + ROW_H / 2 + 7,
+            fill: '#9ca3af', 'font-size': '10',
+            'text-anchor': 'end', 'font-family': 'Inter, sans-serif',
+            'dominant-baseline': 'middle'
+          });
+          ptsText.textContent = `${manager.totalPoints} pts`;
+          svg.appendChild(ptsText);
+
+          // Background track
+          const track = svgEl('rect', {
+            x: LABEL_W, y: y + 4,
+            width: BAR_AREA_W * 0.85, height: ROW_H - 8,
+            fill: '#374151', rx: 3
+          });
+          svg.appendChild(track);
+
+          // Stacked player segments
+          const sumContributions = manager.players.reduce((s, p) => s + p.points, 0);
+          const scaleBase = sumContributions > 0 ? sumContributions : manager.totalPoints;
+          let xOffset = 0;
+
+          for (const player of manager.players) {
+            if (xOffset >= barTotalW) break;
+            const segW = (player.points / scaleBase) * barTotalW;
+            if (segW <= 0) continue;
+            const clippedW = Math.min(segW, barTotalW - xOffset);
+            const color = POS_COLORS[player.position] || '#9ca3af';
+
+            const rect = svgEl('rect', {
+              x: LABEL_W + xOffset, y: y + 4,
+              width: clippedW, height: ROW_H - 8,
+              fill: color, rx: 2
+            });
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = `${player.name}: ${player.points} pts`;
+            rect.appendChild(title);
+            svg.appendChild(rect);
+
+            if (clippedW > 28) {
+              const label = svgEl('text', {
+                x: LABEL_W + xOffset + clippedW / 2,
+                y: y + ROW_H / 2,
+                fill: '#111827', 'font-size': '9', 'font-weight': '700',
+                'text-anchor': 'middle', 'dominant-baseline': 'middle',
+                'font-family': 'Inter, sans-serif', 'pointer-events': 'none'
+              });
+              label.textContent = player.name;
+              svg.appendChild(label);
+            }
+
+            xOffset += segW;
+          }
+        });
+
+        contributionsChartContainer.innerHTML = '';
+        contributionsChartContainer.appendChild(svg);
+        contributionsChartContainer.classList.remove('hidden');
+      };
+
+      const fetchPlayerContributions = async () => {
+        contributionsStatus.textContent = 'Computing player contributions... (this may take 30–60 seconds)';
+        contributionsChartContainer.classList.add('hidden');
+
+        try {
+          const response = await fetch(`/api/get-player-contributions?leagueId=${leagueId}`);
+
+          if (response.status === 504) {
+            contributionsStatus.textContent = 'Request timed out. The FPL API was too slow. Try again in a moment.';
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            contributionsStatus.textContent = data.error || 'Failed to load player contributions.';
+            return;
+          }
+
+          contributionsStatus.textContent = '';
+          renderContributionsChart(data);
+
+        } catch (err) {
+          console.error('Player contributions error:', err);
+          contributionsStatus.textContent = 'An error occurred. Please try again.';
+        }
+      };
+
       // Refresh button event listener
       refreshButton.addEventListener('click', fetchLiveStandings);
 
@@ -532,6 +676,7 @@
       liveStandingsStatus.textContent = 'Fetching live standings...';
       statusMessage.textContent = 'Fetching auto-sub data...';
       transferCostStatus.textContent = 'Fetching transfer cost data...';
+      contributionsStatus.textContent = 'Computing player contributions...';
       resultsContainer.classList.add('hidden');
       transferCostContainer.classList.add('hidden');
       liveStandingsContainer.classList.add('hidden');
@@ -539,9 +684,10 @@
       // Fetch live standings first (populates What-If dropdown)
       await fetchLiveStandings();
 
-      // Fetch auto-subs and transfer costs in parallel (don't block each other)
+      // Fetch auto-subs, transfer costs, and contributions in parallel (don't block each other)
       fetchAutoSubs();
       fetchTransferCosts();
+      fetchPlayerContributions();
     });
   </script>
 
