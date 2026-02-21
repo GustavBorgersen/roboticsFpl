@@ -8,19 +8,21 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const FPL_HEADERS = { 'User-Agent': 'RoboticsFPL/1.0' };
 
-const fetchWithRetry = async (url, retries = 3, delay = 1000) => {
+const fetchWithRetry = async (url, retries = 4, baseDelay = 2000) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url, { headers: FPL_HEADERS });
       if (response.ok) return response;
       if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying...`);
-        await sleep(delay);
+        const wait = baseDelay * attempt; // exponential-ish: 2s, 4s, 6s
+        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying in ${wait}ms...`);
+        await sleep(wait);
       }
     } catch (error) {
       if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying...`);
-        await sleep(delay);
+        const wait = baseDelay * attempt;
+        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying in ${wait}ms...`);
+        await sleep(wait);
       } else {
         throw error;
       }
@@ -79,19 +81,23 @@ function simulateAutoSubs(picks, playerDataForGW) {
  * for that GW (404) rather than throwing, so mid-season joiners are handled gracefully.
  */
 const fetchPicksSafe = async (url) => {
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const retries = 4;
+  const baseDelay = 2000;
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url, { headers: FPL_HEADERS });
       if (response.ok) return response;
       if (response.status === 404) return null; // Manager didn't participate this GW
-      if (attempt < 3) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying...`);
-        await sleep(1000);
+      if (attempt < retries) {
+        const wait = baseDelay * attempt;
+        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying in ${wait}ms...`);
+        await sleep(wait);
       }
     } catch (error) {
-      if (attempt < 3) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying...`);
-        await sleep(1000);
+      if (attempt < retries) {
+        const wait = baseDelay * attempt;
+        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying in ${wait}ms...`);
+        await sleep(wait);
       } else {
         throw error;
       }
@@ -159,7 +165,7 @@ module.exports = async (req, res) => {
         .then(r => r.json())
         .then(data => ({ gw, data }))
     );
-    const liveResults = await batchFetch(gwLiveTasks, 5, 200);
+    const liveResults = await batchFetch(gwLiveTasks, 3, 500);
 
     const gwPlayerData = {};
     for (const { gw, data } of liveResults) {
@@ -185,7 +191,7 @@ module.exports = async (req, res) => {
         );
       }
     }
-    const picksResults = await batchFetch(picksTasks, 5, 200);
+    const picksResults = await batchFetch(picksTasks, 3, 500);
 
     // Organise picks: managerId → gw → picksData
     const picksByManager = {};
