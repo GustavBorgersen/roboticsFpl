@@ -75,6 +75,32 @@ function simulateAutoSubs(picks, playerDataForGW) {
 }
 
 /**
+ * Fetch picks for a single manager/GW. Returns null if the entry doesn't exist
+ * for that GW (404) rather than throwing, so mid-season joiners are handled gracefully.
+ */
+const fetchPicksSafe = async (url) => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(url, { headers: FPL_HEADERS });
+      if (response.ok) return response;
+      if (response.status === 404) return null; // Manager didn't participate this GW
+      if (attempt < 3) {
+        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying...`);
+        await sleep(1000);
+      }
+    } catch (error) {
+      if (attempt < 3) {
+        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying...`);
+        await sleep(1000);
+      } else {
+        throw error;
+      }
+    }
+  }
+  return null;
+};
+
+/**
  * Run an array of async task functions in batches, with a delay between batches.
  */
 async function batchFetch(tasks, batchSize = 5, delayMs = 200) {
@@ -153,8 +179,8 @@ module.exports = async (req, res) => {
     for (const manager of managers) {
       for (const gw of finishedGWs) {
         picksTasks.push(() =>
-          fetchWithRetry(`${TEAM_API_URL}${manager.managerId}/event/${gw}/picks/`)
-            .then(r => r.json())
+          fetchPicksSafe(`${TEAM_API_URL}${manager.managerId}/event/${gw}/picks/`)
+            .then(r => r ? r.json() : null)
             .then(data => ({ managerId: manager.managerId, gw, data }))
         );
       }
