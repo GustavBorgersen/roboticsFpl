@@ -1,36 +1,9 @@
 // api/get-live-standings.js
+const { fetchWithRetry, sleep } = require('./_lib/fpl');
+
 const LEAGUE_API_URL = 'https://fantasy.premierleague.com/api/leagues-classic/';
 const TEAM_API_URL = 'https://fantasy.premierleague.com/api/entry/';
 const BOOTSTRAP_URL = 'https://fantasy.premierleague.com/api/bootstrap-static/';
-
-// Helper function to introduce a delay
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper function to fetch with retry logic
-const FPL_HEADERS = { 'User-Agent': 'RoboticsFPL/1.0' };
-
-const fetchWithRetry = async (url, retries = 3, delay = 1000) => {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, { headers: FPL_HEADERS });
-      if (response.ok) {
-        return response;
-      }
-      if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying in ${delay}ms...`);
-        await sleep(delay);
-      }
-    } catch (error) {
-      if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying in ${delay}ms...`);
-        await sleep(delay);
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw new Error(`Failed to fetch ${url} after ${retries} attempts.`);
-};
 
 // Vercel serverless function entry point
 module.exports = async (req, res) => {
@@ -44,16 +17,13 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Please provide a leagueId parameter.' });
     }
 
-    // Step 1: Get current gameweek information
-    console.log('Step 1: Fetching current gameweek...');
-    const bootstrapResponse = await fetchWithRetry(BOOTSTRAP_URL);
+    // Step 1: Fetch bootstrap + standings in parallel
+    console.log('Step 1: Fetching bootstrap & league standings...');
+    const [bootstrapResponse, leagueResponse] = await Promise.all([
+      fetchWithRetry(BOOTSTRAP_URL),
+      fetchWithRetry(`${LEAGUE_API_URL}${leagueId}/standings/`)
+    ]);
     const bootstrapData = await bootstrapResponse.json();
-    const currentGameweek = bootstrapData.events.find(event => event.is_current).id;
-    console.log(`Current Gameweek is: ${currentGameweek}`);
-
-    // Step 2: Fetch league standings to get managers and their last week positions
-    console.log(`Step 2: Fetching league standings for league ID: ${leagueId}`);
-    const leagueResponse = await fetchWithRetry(`${LEAGUE_API_URL}${leagueId}/standings/`);
     const leagueData = await leagueResponse.json();
 
     if (leagueData.detail === 'Not found.') {
@@ -61,13 +31,15 @@ module.exports = async (req, res) => {
       return res.status(404).json({ error: 'League not found. Please check the League ID.' });
     }
 
-    // Step 3: Get live player data for the current gameweek
-    console.log('Step 3: Fetching live player data...');
+    const currentGameweek = bootstrapData.events.find(event => event.is_current).id;
+    console.log(`Current Gameweek is: ${currentGameweek}`);
+
+    // Step 2: Get live player data for the current gameweek
+    console.log('Step 2: Fetching live player data...');
     let livePlayerData = {};
     try {
       const liveResponse = await fetchWithRetry(`https://fantasy.premierleague.com/api/event/${currentGameweek}/live/`);
       const liveData = await liveResponse.json();
-      // Create a map of player_id -> live_points for quick lookup
       livePlayerData = liveData.elements.reduce((acc, player) => {
         acc[player.id] = player.stats.total_points;
         return acc;
@@ -77,8 +49,8 @@ module.exports = async (req, res) => {
       console.warn('Could not fetch live player data, will use static points:', error.message);
     }
 
-    // Step 4: Get data for each manager and calculate live points
-    console.log('Step 4: Processing each manager...');
+    // Step 3: Get data for each manager and calculate live points
+    console.log('Step 3: Processing each manager...');
     const liveStandings = [];
 
     for (const manager of leagueData.standings.results) {
@@ -86,11 +58,9 @@ module.exports = async (req, res) => {
       console.log(`Processing manager: ${manager.player_name} (ID: ${managerId})`);
 
       try {
-        // Get current gameweek picks
         const currentGwResponse = await fetchWithRetry(`${TEAM_API_URL}${managerId}/event/${currentGameweek}/picks/`);
         const currentGwData = await currentGwResponse.json();
 
-        // Get previous gameweek data to calculate last gameweek total points
         let lastGameweekTotalPoints = 0;
         if (currentGameweek > 1) {
           try {
@@ -101,29 +71,23 @@ module.exports = async (req, res) => {
             }
           } catch (error) {
             console.warn(`Could not fetch previous gameweek data for manager ${managerId}`);
-            // Fallback: use current total minus current gameweek points
             const currentGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
             const currentTotal = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
             lastGameweekTotalPoints = currentTotal - currentGwPoints;
           }
         }
 
-        // Calculate live points by combining picks with live player data
         const staticGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
         const staticTotalPoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
 
-        // Calculate live gameweek points if live data is available
         let liveGwPoints = staticGwPoints;
         if (Object.keys(livePlayerData).length > 0 && currentGwData.picks) {
           liveGwPoints = 0;
           currentGwData.picks.forEach(pick => {
-            const playerId = pick.element;
-            const playerLivePoints = livePlayerData[playerId] || 0;
-            const multiplier = pick.multiplier;
-            liveGwPoints += playerLivePoints * multiplier;
+            const playerLivePoints = livePlayerData[pick.element] || 0;
+            liveGwPoints += playerLivePoints * pick.multiplier;
           });
 
-          // Add any automatic substitution points
           if (currentGwData.automatic_subs) {
             currentGwData.automatic_subs.forEach(sub => {
               const subInPoints = livePlayerData[sub.element_in] || 0;
@@ -133,7 +97,6 @@ module.exports = async (req, res) => {
           }
         }
 
-        // Calculate live total points
         const livePoints = staticTotalPoints - staticGwPoints + liveGwPoints;
 
         liveStandings.push({
@@ -146,12 +109,10 @@ module.exports = async (req, res) => {
           lastWeekPoints: manager.total
         });
 
-        // Add small delay to avoid overwhelming the API
         await sleep(100);
 
       } catch (error) {
         console.error(`Error fetching data for manager ${managerId}:`, error);
-        // Add manager with fallback data
         liveStandings.push({
           managerId: managerId,
           managerName: manager.player_name,
@@ -164,40 +125,31 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Step 5: Calculate last gameweek positions based on last gameweek total points
-    console.log('Step 5: Calculating last gameweek positions...');
+    // Step 4: Calculate last gameweek positions and position changes
+    console.log('Step 4: Calculating positions and changes...');
     const lastGameweekStandings = [...liveStandings].sort((a, b) => b.lastGameweekTotalPoints - a.lastGameweekTotalPoints);
-
-    // Create a map of manager ID to last gameweek position
     const lastGameweekPositions = new Map();
     lastGameweekStandings.forEach((manager, index) => {
       lastGameweekPositions.set(manager.managerId, index + 1);
     });
 
-    // Step 6: Sort by live points and calculate position changes
-    console.log('Step 6: Calculating live positions and changes...');
     liveStandings.sort((a, b) => b.livePoints - a.livePoints);
 
-    // Add current live position and calculate change from last gameweek
     const results = liveStandings.map((manager, index) => {
       const currentPosition = index + 1;
       const lastGameweekPosition = lastGameweekPositions.get(manager.managerId) || currentPosition;
       const positionChange = lastGameweekPosition - currentPosition;
-
       return {
         ...manager,
-        currentPosition: currentPosition,
-        lastGameweekPosition: lastGameweekPosition,
-        positionChange: positionChange,
+        currentPosition,
+        lastGameweekPosition,
+        positionChange,
         changeDirection: positionChange > 0 ? 'up' : positionChange < 0 ? 'down' : 'same'
       };
     });
 
     console.log('--- Request Complete ---');
-    res.status(200).json({
-      gameweek: currentGameweek,
-      results: results
-    });
+    res.status(200).json({ gameweek: currentGameweek, results });
 
   } catch (error) {
     console.error('An unhandled error occurred:', error);

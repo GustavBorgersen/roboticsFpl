@@ -1,82 +1,10 @@
 // api/get-what-if.js
+const { fetchWithRetry, sleep, simulateAutoSubs } = require('./_lib/fpl');
+
 const BOOTSTRAP_URL = 'https://fantasy.premierleague.com/api/bootstrap-static/';
 const LEAGUE_API_URL = 'https://fantasy.premierleague.com/api/leagues-classic/';
 const TEAM_API_URL = 'https://fantasy.premierleague.com/api/entry/';
 const LIVE_API_URL = 'https://fantasy.premierleague.com/api/event/';
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-const FPL_HEADERS = { 'User-Agent': 'RoboticsFPL/1.0' };
-
-const fetchWithRetry = async (url, retries = 3, delay = 1000) => {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, { headers: FPL_HEADERS });
-      if (response.ok) {
-        return response;
-      }
-      if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Status: ${response.status}. Retrying in ${delay}ms...`);
-        await sleep(delay);
-      }
-    } catch (error) {
-      if (attempt < retries) {
-        console.warn(`  Attempt ${attempt} failed for ${url}. Error: ${error.message}. Retrying in ${delay}ms...`);
-        await sleep(delay);
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw new Error(`Failed to fetch ${url} after ${retries} attempts.`);
-};
-
-/**
- * Simulate auto-subs for a frozen team in a given GW.
- * Returns the effective lineup: array of { element, multiplier } for active players.
- *
- * If a starter has 0 minutes, the first bench player (by position order 12-15)
- * with >0 minutes subs in, inheriting the starter's multiplier.
- */
-function simulateAutoSubs(frozenPicks, playerDataForGW) {
-  const starters = frozenPicks
-    .filter(p => p.position >= 1 && p.position <= 11)
-    .sort((a, b) => a.position - b.position);
-
-  const bench = frozenPicks
-    .filter(p => p.position >= 12 && p.position <= 15)
-    .sort((a, b) => a.position - b.position);
-
-  const usedBenchPlayers = new Set();
-  const effectiveLineup = [];
-
-  for (const starter of starters) {
-    const starterData = playerDataForGW[starter.element];
-    const starterMinutes = starterData ? starterData.minutes : 0;
-
-    if (starterMinutes > 0) {
-      effectiveLineup.push({ element: starter.element, multiplier: starter.multiplier });
-    } else {
-      let subbed = false;
-      for (const benchPlayer of bench) {
-        if (usedBenchPlayers.has(benchPlayer.element)) continue;
-        const benchData = playerDataForGW[benchPlayer.element];
-        const benchMinutes = benchData ? benchData.minutes : 0;
-        if (benchMinutes > 0) {
-          effectiveLineup.push({ element: benchPlayer.element, multiplier: starter.multiplier });
-          usedBenchPlayers.add(benchPlayer.element);
-          subbed = true;
-          break;
-        }
-      }
-      if (!subbed) {
-        effectiveLineup.push({ element: starter.element, multiplier: starter.multiplier });
-      }
-    }
-  }
-
-  return effectiveLineup;
-}
 
 module.exports = async (req, res) => {
   console.log('--- FPL What-If Request ---');
@@ -118,11 +46,7 @@ module.exports = async (req, res) => {
       }
       const results = await Promise.all(batch);
       for (const { gw, data } of results) {
-        if (data.picks && Array.isArray(data.picks)) {
-          picksMap[gw] = data;
-        } else {
-          picksMap[gw] = null;
-        }
+        picksMap[gw] = (data.picks && Array.isArray(data.picks)) ? data : null;
       }
       if (i + batchSize < currentGW) await sleep(200);
     }
@@ -156,18 +80,13 @@ module.exports = async (req, res) => {
     const actual = [];
     for (let gw = 1; gw <= currentGW; gw++) {
       const history = picksMap[gw]?.entry_history;
-      actual.push({
-        gw,
-        points: history ? history.total_points : null
-      });
+      actual.push({ gw, points: history ? history.total_points : null });
     }
 
     // Step 6: Determine freeze points (GW 1 + every transfer GW, excluding Free Hit GWs)
     const freeHitGWs = new Set();
     for (let gw = 1; gw <= currentGW; gw++) {
-      if (picksMap[gw]?.active_chip === 'freehit') {
-        freeHitGWs.add(gw);
-      }
+      if (picksMap[gw]?.active_chip === 'freehit') freeHitGWs.add(gw);
     }
     if (freeHitGWs.size > 0) {
       console.log(`Free Hit GWs (excluded from branches): [${[...freeHitGWs].join(', ')}]`);
@@ -189,14 +108,12 @@ module.exports = async (req, res) => {
       const frozenPicks = frozenPicksData.picks;
 
       // Normalize chip multipliers for subsequent GWs:
-      // - Triple Captain (3) reverts to normal Captain (2)
-      // - Bench Boost (bench players with multiplier 1) revert to bench (0)
+      // Triple Captain (3) → Captain (2); bench boost bench (multiplier 1) → bench (0)
       const normalizedPicks = frozenPicks.map(p => ({
         ...p,
         multiplier: p.position >= 12 ? 0 : (p.multiplier === 3 ? 2 : p.multiplier)
       }));
 
-      // Base points: actual total at end of (freezeGW - 1)
       let basePoints = 0;
       if (freezeGW > 1 && picksMap[freezeGW - 1]?.entry_history) {
         basePoints = picksMap[freezeGW - 1].entry_history.total_points;
@@ -211,7 +128,6 @@ module.exports = async (req, res) => {
           continue;
         }
 
-        // Use original multipliers for the freeze GW (chip was active), normalized for subsequent GWs
         const picksForGW = (gw === freezeGW) ? frozenPicks : normalizedPicks;
         const effectiveLineup = simulateAutoSubs(picksForGW, gwPlayerData[gw]);
 
@@ -226,22 +142,13 @@ module.exports = async (req, res) => {
         branchData.push({ gw, points: runningTotal });
       }
 
-      branches.push({
-        freezeGW,
-        label: `GW${freezeGW} freeze`,
-        data: branchData
-      });
+      branches.push({ freezeGW, label: `GW${freezeGW} freeze`, data: branchData });
     }
 
     console.log(`Computed ${branches.length} branches`);
     console.log('--- Request Complete ---');
 
-    res.status(200).json({
-      managerId: parseInt(managerId),
-      currentGW,
-      actual,
-      branches
-    });
+    res.status(200).json({ managerId: parseInt(managerId), currentGW, actual, branches });
 
   } catch (error) {
     console.error('An unhandled error occurred:', error);
