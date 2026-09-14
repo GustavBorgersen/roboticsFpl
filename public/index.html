@@ -37,6 +37,10 @@
                 <th class="px-2 py-1 font-medium text-center">Live Pts</th>
                 <th class="px-2 py-1 font-medium text-center">GW Pts</th>
                 <th class="px-2 py-1 font-medium text-center">Change</th>
+                <th
+                  class="px-2 py-1 font-medium text-center cursor-help underline decoration-dotted decoration-gray-400 underline-offset-2"
+                  title="Squad value as of the gameweek deadline. Price changes during the week are not included."
+                >Squad Value</th>
               </tr>
             </thead>
             <tbody id="liveStandingsTableBody">
@@ -421,7 +425,7 @@
             liveStandingsTableBody.innerHTML = '';
 
             if (data.results.length === 0) {
-              liveStandingsTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
+              liveStandingsTableBody.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
             } else {
               data.results.forEach((manager) => {
                 const row = document.createElement('tr');
@@ -438,6 +442,7 @@
                   <td class="px-2 py-1 text-center font-bold text-blue-400">${manager.livePoints}</td>
                   <td class="px-2 py-1 text-center font-bold text-yellow-400">${manager.pointsThisWeek}</td>
                   <td class="px-2 py-1 text-center">${positionChangeHtml}</td>
+                  <td class="px-2 py-1 text-center text-gray-300">${manager.squadValue != null ? `£${manager.squadValue.toFixed(1)}m` : '-'}</td>
                 `;
                 liveStandingsTableBody.appendChild(row);
               });

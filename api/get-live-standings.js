@@ -79,6 +79,7 @@ module.exports = async (req, res) => {
 
         const staticGwPoints = currentGwData.entry_history ? currentGwData.entry_history.points : 0;
         const staticTotalPoints = currentGwData.entry_history ? currentGwData.entry_history.total_points : manager.total;
+        const squadValue = currentGwData.entry_history ? currentGwData.entry_history.value / 10 : null;
 
         let liveGwPoints = staticGwPoints;
         if (Object.keys(livePlayerData).length > 0 && currentGwData.picks) {
@@ -99,7 +100,8 @@ module.exports = async (req, res) => {
           livePoints: livePoints,
           pointsThisWeek: liveGwPoints,
           lastGameweekTotalPoints: lastGameweekTotalPoints,
-          lastWeekPoints: manager.total
+          lastWeekPoints: manager.total,
+          squadValue: squadValue
         });
 
         await sleep(100);
@@ -113,7 +115,8 @@ module.exports = async (req, res) => {
           livePoints: manager.total,
           pointsThisWeek: 0,
           lastGameweekTotalPoints: manager.total,
-          lastWeekPoints: manager.total
+          lastWeekPoints: manager.total,
+          squadValue: null
         });
       }
     }
