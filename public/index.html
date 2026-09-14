@@ -36,6 +36,7 @@
                 <th class="px-2 py-1 font-medium">Manager</th>
                 <th class="px-2 py-1 font-medium text-center">Live Pts</th>
                 <th class="px-2 py-1 font-medium text-center">GW Pts</th>
+                <th class="px-2 py-1 font-medium text-center">Squad Value</th>
                 <th class="px-2 py-1 font-medium text-center">Change</th>
               </tr>
             </thead>
@@ -421,7 +422,7 @@
             liveStandingsTableBody.innerHTML = '';
 
             if (data.results.length === 0) {
-              liveStandingsTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
+              liveStandingsTableBody.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-400">No standings data available.</td></tr>';
             } else {
               data.results.forEach((manager) => {
                 const row = document.createElement('tr');
@@ -437,6 +438,7 @@
                   </td>
                   <td class="px-2 py-1 text-center font-bold text-blue-400">${manager.livePoints}</td>
                   <td class="px-2 py-1 text-center font-bold text-yellow-400">${manager.pointsThisWeek}</td>
+                  <td class="px-2 py-1 text-center text-gray-300">${manager.squadValue != null ? `£${manager.squadValue.toFixed(1)}m` : '-'}</td>
                   <td class="px-2 py-1 text-center">${positionChangeHtml}</td>
                 `;
                 liveStandingsTableBody.appendChild(row);
