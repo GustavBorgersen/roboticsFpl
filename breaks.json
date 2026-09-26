@@ -1,0 +1,22 @@
+{
+  "leagueId": "144226",
+  "timezone": "Europe/Stockholm",
+  "graceDays": 4,
+  "breaks": [
+    {
+      "id": "2026-09",
+      "name": "September Break",
+      "snapshotGW": 5,
+      "start": "2026-09-22",
+      "end": "2026-10-08",
+      "rounds": [
+        { "round": 1, "stage": "group", "start": "2026-09-22", "end": "2026-09-26" },
+        { "round": 2, "stage": "group", "start": "2026-09-27", "end": "2026-09-30" },
+        { "round": 3, "stage": "semi",  "start": "2026-10-01", "end": "2026-10-03" },
+        { "round": 4, "stage": "final", "start": "2026-10-04", "end": "2026-10-08" }
+      ],
+      "playerOverrides": {},
+      "extraNations": {}
+    }
+  ]
+}
