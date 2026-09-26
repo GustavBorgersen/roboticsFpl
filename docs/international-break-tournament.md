@@ -32,6 +32,12 @@ The tournament is the first thing you see on the roboticsFpl page during an acti
 
 Appearance points and bonus points are deliberately left out.
 
+Details:
+- A **second yellow** counts as a red card only (−3 total, the earlier yellow is dropped).
+- A **saved penalty** is a missed penalty for the taker (−2) and a penalty save for the keeper (+5).
+- A penalty goal gets no assist. Penalty shoot-outs don't count.
+- Clean sheets are only given once the match has finished.
+
 ---
 
 ## 2. Format
@@ -39,7 +45,7 @@ Appearance points and bonus points are deliberately left out.
 The break is split into **4 rounds**, each defined by a date range in the break config.
 
 ### Rounds 1–2: Group stage
-- 30 managers are split into **4 groups** (A, B, C, D) of 8, 8, 7 and 7.
+- 30 managers are split into **4 groups** (A, B, C, D): two groups of 8 and two of 7.
 - Groups are **seeded by mini-league rank at the snapshot GW** using a snake draft, so they are balanced and always computed the same way:
   - Ranks 1–4 → A, B, C, D
   - Ranks 5–8 → D, C, B, A
@@ -69,29 +75,33 @@ Every manager keeps scoring all break, eliminated or not. A separate **Golden Bo
 
 ## 3. Break config (manual step)
 
-Before each break, someone edits `breaks.json` in the repo with the dates. That's about 3 times a season.
+Before each break, someone edits `breaks.json` in the repo root with the dates. That's about 3 times a season. A good way to pick round dates is to follow the UEFA Nations League matchdays and stretch the first and last rounds to cover the whole break (from the day after the last PL game to the day before the next deadline).
 
 ```json
 {
   "breaks": [
     {
-      "id": "2026-10",
-      "name": "October Break",
-      "snapshotGW": 7,
-      "start": "2026-10-05",
-      "end": "2026-10-14",
+      "id": "2026-09",
+      "name": "September Break",
+      "snapshotGW": 5,
+      "start": "2026-09-22",
+      "end": "2026-10-08",
       "rounds": [
-        { "round": 1, "stage": "group", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
-        { "round": 2, "stage": "group", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
-        { "round": 3, "stage": "semi",  "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
-        { "round": 4, "stage": "final", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }
-      ]
+        { "round": 1, "stage": "group", "start": "2026-09-22", "end": "2026-09-26" },
+        { "round": 2, "stage": "group", "start": "2026-09-27", "end": "2026-09-30" },
+        { "round": 3, "stage": "semi",  "start": "2026-10-01", "end": "2026-10-03" },
+        { "round": 4, "stage": "final", "start": "2026-10-04", "end": "2026-10-08" }
+      ],
+      "playerOverrides": {},
+      "extraNations": {}
     }
   ]
 }
 ```
 
-*(The dates above are placeholders; the real schedule for this break still has to be checked.)*
+- `playerOverrides`: `{ "<fplElementId>": "<espnAthleteId>" }` for players the automatic name matching gets wrong or can't find.
+- `extraNations`: `{ "<espnAthleteId>": "<ESPN national team name>" }` for players whose ESPN citizenship isn't the country they play for.
+- The top-level `graceDays` (default 4) sets how long the result stays up after the break ends.
 
 - **Active break:** today is between `start` and a few days after `end` (grace period so the final result stays up). While a break is active, the tournament is shown at the top of the page.
 - **Round status:** a round is **Live / provisional** until its `end` date has passed, then **Final**. Group qualification and semi-final results only lock once their rounds are final.
@@ -117,27 +127,45 @@ The tournament should feel like a proper cup competition, not another stats tabl
 ## 5. Technical design
 
 ### Fits the existing Vercel app
-- **No GitHub Action or daily job.** Standings are computed on request by a new serverless endpoint, `api/get-break-tournament.js`.
-- **Caching:** the response is cached at Vercel's CDN (`Cache-Control: s-maxage=…, stale-while-revalidate`), so the external football API is only called a few times per hour at most, no matter how many people visit. Finished rounds could be cached much longer.
-- Reuses `fetchPicksSafe`, `batchFetch` and `fetchWithRetry` from `api/_lib/fpl.js` for the FPL side.
+- **No GitHub Action or daily job.** Standings are computed on request by `api/get-break-tournament.js`.
+- **Caching:** the response is cached at Vercel's CDN for 10 minutes (`s-maxage=600, stale-while-revalidate=1800`), and for 6 hours once every round is final. Outside a break the endpoint returns `{ "active": false }` without calling any external API.
+- Reuses `fetchWithRetry`, `fetchPicksSafe` and `batchFetch` from `api/_lib/fpl.js`.
+- Code layout:
+  - `api/_lib/espn.js`: ESPN API calls.
+  - `api/_lib/tournament.js`: player mapping, match scoring, groups/bracket logic.
+  - `public/break-tournament.js`: the UI, rendered into `#breakTournament` at the top of `public/index.html`.
+
+### Data source: ESPN's public soccer API
+- `site.api.espn.com/apis/site/v2/sports/soccer/...`: free, no API key, covers every international competition (Nations League, friendlies, CONCACAF Nations League, AFCON and Asian qualifiers…).
+- It is unofficial and undocumented, so it could change without notice. It rejects the custom `RoboticsFPL/1.0` User-Agent, so ESPN requests are sent without it.
+- Endpoints used:
+  - `eng.1/teams` and `eng.1/teams/{id}/roster`: Premier League squads with ESPN athlete IDs and citizenship.
+  - `all/scoreboard?dates=YYYYMMDD&limit=1000`: every match on a date, all competitions.
+  - `all/summary?event={id}`: line-ups, per-player box score (incl. goals conceded while on the pitch) and key events (goals with assister, cards, subs, penalties with minute).
+- A few minor matches have no line-ups or key events. When key events are missing, box-score totals are used instead (no penalty detail or minutes).
 
 ### Data flow
 1. Read `breaks.json` and find the active break.
-2. Fetch league standings (for seeding) and every manager's picks for `snapshotGW` from the FPL API.
-3. Fetch international fixtures within the break's date range from the football data API, then events and lineups for each finished or live fixture.
-4. Match events to squad players via `players.json`, apply scoring and the round/stage logic.
-5. Return groups, bracket, Golden Boot table and per-player breakdowns as JSON.
+2. From FPL: league standings and every manager's picks for `snapshotGW`. From ESPN: the 20 PL squads.
+3. Map each squad player to an ESPN athlete (see below) and collect their nations.
+4. Fetch ESPN scoreboards for each date in the break and keep started matches involving one of those nations.
+5. Fetch summaries for those matches and score them for the tracked athletes. Only athlete IDs count, so a women's or club match with a matching team name scores nothing.
+6. Assign rounds by kick-off date in Swedish time and build groups, bracket and Golden Boot.
 
-### Player mapping (`players.json`)
-- The FPL API and the football data API use different player IDs, and names don't match reliably (Rodri vs. Rodrigo, mononyms, accents).
-- Before each break, a one-off script lists the unique players across all 30 squads (roughly 150–250), matches them to the football API by name plus nationality, and writes `players.json`: `fpl_element_id → { name, nation, external_id }`.
-- The few that don't match are fixed by hand. The file grows over the season, so later breaks need less work.
+A full request makes around 100 external calls and takes about 5 seconds.
+
+### Player mapping (automatic)
+- Each FPL player is matched by name against the ESPN squad of the **same club**, so there are only ~30 candidates and matching is reliable (137 of 139 squad players matched on the first run).
+- Unmatched players are returned in the response's `diagnostics.unmatchedPlayers`. Typically they are players who left the PL or academy players ESPN doesn't list; fix any that matter with `playerOverrides`.
+- The response also lists `diagnostics.nationsWithoutMatches` (nations with no scored match yet) and `diagnostics.matchesWithoutData`.
 
 ---
 
 ## 6. Open questions / to verify
 
-- [ ] **Football data API:** confirm which provider's free tier covers all international competitions (including friendlies and non-UEFA qualifiers) for the current season, with events and lineups. API-Football is the first candidate.
-- [ ] **This break's schedule:** verify online that the current break has 4 matches per team, and set the real round dates.
-- [ ] **Request budget:** estimate daily API calls (fixture list + per-fixture events/lineups) against the free tier limit, and pick the cache duration accordingly.
-- [ ] **Tiebreaker data:** confirm goals and cards can be counted from the same event data used for scoring.
+- [x] **Football data API:** ESPN's public API covers all international matches with events and line-ups, no key needed.
+- [x] **This break's schedule:** confirmed 4 Nations League matchdays (24–26 Sep, 27–29 Sep, 1–3 Oct, 4–6 Oct). Round dates set in `breaks.json`.
+- [x] **Request budget:** no daily limit with ESPN; CDN caching keeps the load low anyway.
+- [x] **Tiebreaker data:** goals and cards come from the same key events used for scoring.
+- [ ] **Late-night matches in the Americas** kick off after midnight Swedish time, so they count towards the next day's round. Fine for now; revisit if it causes a borderline case.
+- [ ] **ESPN reliability:** unofficial API. If it breaks, the tournament section fails quietly and the rest of the page is unaffected.

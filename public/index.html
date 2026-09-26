@@ -8,12 +8,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; }
+    @keyframes bt-float { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-4px) rotate(4deg); } }
+    .bt-float { display: inline-block; animation: bt-float 3s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .bt-float { animation: none; } }
   </style>
 </head>
 <body class="bg-gray-900 text-gray-200">
 
   <div class="flex flex-col items-center min-h-screen p-2 md:p-4 space-y-3 max-w-5xl mx-auto">
     <h1 class="text-xl font-bold text-center mb-2 text-green-400">The Robotics Premiership</h1>
+
+    <!-- International break tournament (shown only while a break is active) -->
+    <section id="breakTournament" class="w-full" hidden></section>
 
     <!-- Live League Table -->
     <div class="bg-gray-800 p-3 md:p-4 rounded-xl shadow-lg w-full">
@@ -687,6 +693,7 @@
       fetchSeasonData();
     });
   </script>
+  <script src="/break-tournament.js"></script>
 
 </body>
 </html>
