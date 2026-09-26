@@ -8,11 +8,12 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Fetch with exponential backoff retry.
  * Waits baseDelay*attempt ms between retries (2s, 4s, 6s, 8s by default).
+ * Sends the FPL User-Agent unless other headers are given.
  */
-const fetchWithRetry = async (url, retries = 4, baseDelay = 2000) => {
+const fetchWithRetry = async (url, retries = 4, baseDelay = 2000, headers = FPL_HEADERS) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const response = await fetch(url, { headers: FPL_HEADERS });
+      const response = await fetch(url, { headers });
       if (response.ok) return response;
       if (attempt < retries) {
         const wait = baseDelay * attempt;
